@@ -1,11 +1,10 @@
 //! Configuration management and storage
 use anyhow::Result;
 use directories::ProjectDirs;
-use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use crate::AppConfig;
+use crate::app::AppConfig;
 
 #[derive(Debug)]
 pub struct ConfigManager {
@@ -21,19 +20,19 @@ impl ConfigManager {
 
         Self {
             config_path,
-            default_config: AppConfig {
-                window_settings: crate::WindowSettings {
-                    width: 1200,
-                    height: 800,
-                    x: None,
-                    y: None,
-                    maximized: false,
-                    always_on_top: false,
-                    transparent: false,
-                },
-                profiles: vec![],
-                current_profile_id: None,
-            },
+        default_config: AppConfig {
+  window_settings: crate::ui::WindowSettings {
+  width: 1200,
+  height: 800,
+  x: None,
+  y: None,
+  maximized: false,
+  always_on_top: false,
+  transparent: false,
+  },
+  profiles: vec![],
+  current_profile_id: None,
+  },
         }
     }
 

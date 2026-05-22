@@ -2,32 +2,22 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-use crate::{ConfigManager, WindowManager};
+use crate::config::ConfigManager;
+use crate::ui::{WindowManager, WindowSettings};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
-    pub window_settings: WindowSettings,
-    pub profiles: Vec<Profile>,
-    pub current_profile_id: Option<String>,
+  pub window_settings: WindowSettings,
+  pub profiles: Vec<Profile>,
+  pub current_profile_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
-    pub id: String,
-    pub name: String,
-    pub teams_url: String,
-    pub is_default: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WindowSettings {
-    pub width: u32,
-    pub height: u32,
-    pub x: Option<i32>,
-    pub y: Option<i32>,
-    pub maximized: bool,
-    pub always_on_top: bool,
-    pub transparent: bool,
+  pub id: String,
+  pub name: String,
+  pub teams_url: String,
+  pub is_default: bool,
 }
 
 pub struct App {

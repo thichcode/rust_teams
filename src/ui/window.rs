@@ -1,16 +1,17 @@
 //! Main application entry point and window management
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 
 pub struct WindowManager {
     // Placeholder for window config
 }
 
 impl WindowManager {
-    pub fn new() -> Result<Self> {
-        Ok(Self { 
-            // TODO: Implement with winit
-        })
-    }
+ pub fn new() -> Result<Self> {
+ Ok(Self {
+ // TODO: Implement with winit
+ })
+ }
 
     pub fn create_window(&self, _settings: &WindowSettings) -> Result<()> {
         Ok(())
@@ -54,13 +55,13 @@ impl WindowManager {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WindowSettings {
-    pub width: u32,
-    pub height: u32,
-    pub x: Option<i32>,
-    pub y: Option<i32>,
-    pub maximized: bool,
-    pub always_on_top: bool,
-    pub transparent: bool,
+  pub width: u32,
+  pub height: u32,
+  pub x: Option<i32>,
+  pub y: Option<i32>,
+  pub maximized: bool,
+  pub always_on_top: bool,
+  pub transparent: bool,
 }
