@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 # Core WebView2 support for Windows
-webview2-com = { version = "0.20.0", features = ["winrt"] }
+webview2-com = "0.20.0"
 
 # Window management
 winit = { version = "0.29.0", features = ["default"] }

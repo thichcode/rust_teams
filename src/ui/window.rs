@@ -3,15 +3,13 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 pub struct WindowManager {
-    // Placeholder for window config
+    // Placeholder for window handle
 }
 
 impl WindowManager {
- pub fn new() -> Result<Self> {
- Ok(Self {
- // TODO: Implement with winit
- })
- }
+    pub fn new() -> Result<Self> {
+        Ok(Self {})
+    }
 
     pub fn create_window(&self, _settings: &WindowSettings) -> Result<()> {
         Ok(())
@@ -34,7 +32,7 @@ impl WindowManager {
     }
 
     pub fn set_size(&self, width: u32, height: u32) -> Result<()> {
-        println!("Resize window → {}x{}", width, height);
+        println!("Resize window -> {}x{}", width, height);
         Ok(())
     }
 
@@ -57,11 +55,11 @@ impl WindowManager {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WindowSettings {
-  pub width: u32,
-  pub height: u32,
-  pub x: Option<i32>,
-  pub y: Option<i32>,
-  pub maximized: bool,
-  pub always_on_top: bool,
-  pub transparent: bool,
+    pub width: u32,
+    pub height: u32,
+    pub x: Option<i32>,
+    pub y: Option<i32>,
+    pub maximized: bool,
+    pub always_on_top: bool,
+    pub transparent: bool,
 }
