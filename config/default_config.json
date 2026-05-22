@@ -1,0 +1,26 @@
+{
+  "profiles": [],
+  "current_profile_id": null,
+  "window_settings": {
+    "width": 1200,
+    "height": 800,
+    "x": null,
+    "y": null,
+    "maximized": false,
+    "always_on_top": false,
+    "transparent": false
+  },
+  "notification_settings": {
+    "enabled": true,
+    "show_badge": true,
+    "play_sound": true,
+    "toast_duration": 5000
+  },
+  "privacy_settings": {
+    "block_ads": true,
+    "block_tracking": true,
+    "blocked_domains": [],
+    "clear_cookies_on_exit": false
+  },
+  "shortcuts": {}
+}

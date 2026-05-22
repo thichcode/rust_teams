@@ -1,0 +1,30 @@
+.git
+/target
+**/*.rs.bk
+**/*.swp
+**/*.tmp
+**/*.log
+/tmp
+**/tmp/
+debug
+release
+**/target/**
+**/target*
+
+# IDE specific files
+*.idea
+*.vscode
+*.sublime-workspace
+*.sublime-project
+
+# OS specific files
+*.DS_Store
+*.Thumbs.db
+*.exe.stackdump
+*.core
+*.dump
+*.stackdump
+*.log
+*.tmp
+*.temp
+*.cache
