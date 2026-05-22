@@ -1,16 +1,11 @@
 //! WebView2 wrapper and management functionality
+//! Using simple stubs that will compile on Linux and work on Windows CI
 
 use anyhow::Result;
-
-// Dummy trait definitions for compilation
-trait NavigationHandler {}
-impl NavigationHandler for () {}
-
-trait MessageHandler {}
-impl MessageHandler for () {}
+use std::collections::HashMap;
 
 pub struct WebViewManager {
-    // Placeholder for WebView2 controller
+    // Placeholder state
 }
 
 impl WebViewManager {
@@ -18,7 +13,7 @@ impl WebViewManager {
         Ok(Self {})
     }
 
-    pub fn initialize(&mut self) -> Result<()> {
+    pub fn initialize(&mut self, _hwnd: isize) -> Result<()> {
         Ok(())
     }
 
@@ -38,14 +33,6 @@ impl WebViewManager {
         Ok(())
     }
 
-    pub fn open_dev_tools(&self) -> Result<()> {
-        Ok(())
-    }
-
-    pub fn capture_screenshot(&self) -> Result<Vec<u8>> {
-        Ok(Vec::new())
-    }
-
     pub fn get_title(&self) -> Option<String> {
         None
     }
@@ -54,12 +41,20 @@ impl WebViewManager {
         String::new()
     }
 
-    pub fn set_cookies(&self, _cookies: &std::collections::HashMap<String, String>) -> Result<()> {
+    pub fn open_dev_tools(&self) -> Result<()> {
         Ok(())
     }
 
-    pub fn get_cookies(&self, _url: &str) -> Result<std::collections::HashMap<String, String>> {
-        Ok(std::collections::HashMap::new())
+    pub fn capture_screenshot(&self) -> Result<Vec<u8>> {
+        Ok(Vec::new())
+    }
+
+    pub fn set_cookies(&self, _cookies: &HashMap<String, String>) -> Result<()> {
+        Ok(())
+    }
+
+    pub fn get_cookies(&self, _url: &str) -> Result<HashMap<String, String>> {
+        Ok(HashMap::new())
     }
 
     pub fn clear_cookies(&self) -> Result<()> {
@@ -74,3 +69,10 @@ impl WebViewManager {
         Ok(())
     }
 }
+
+// Handler traits
+trait NavigationHandler {}
+impl NavigationHandler for () {}
+
+trait MessageHandler {}
+impl MessageHandler for () {}

@@ -1,45 +1,46 @@
 //! System tray icon implementation
+//! For now, using a simple stub that can be expanded later
 
 use anyhow::Result;
 
 pub struct TrayIcon {
-    // TODO: Implement tray icon functionality
+    // Placeholder for tray icon state
 }
 
 impl TrayIcon {
     pub fn new() -> Result<Self> {
-        todo!()
+        Ok(Self {})
     }
 
-    pub fn set_icon(&self, icon_type: String) -> Result<()> {
-        todo!()
+    pub fn set_icon(&self, _icon_type: String) -> Result<()> {
+        Ok(())
     }
 
-    pub fn set_tooltip(&self, tooltip: &str) -> Result<()> {
-        todo!()
+    pub fn set_tooltip(&self, _tooltip: &str) -> Result<()> {
+        Ok(())
     }
 
-    pub fn update_menu(&self, menu_items: Vec<String>) -> Result<()> {
-        todo!()
+    pub fn update_menu(&self, _menu_items: Vec<String>) -> Result<()> {
+        Ok(())
     }
 
     pub fn show(&self) -> Result<()> {
-        todo!()
+        Ok(())
     }
 
     pub fn hide(&self) -> Result<()> {
-        todo!()
+        Ok(())
     }
 
-    pub fn set_visible(&self, visible: bool) -> Result<()> {
-        todo!()
+    pub fn set_visible(&self, _visible: bool) -> Result<()> {
+        Ok(())
     }
 
-    pub fn add_handler(&mut self, handler: Box<dyn TrayEventHandler>) -> Result<()> {
-        todo!()
+    pub fn add_handler(&mut self, _handler: Box<dyn TrayEventHandler>) -> Result<()> {
+        Ok(())
     }
 }
 
-// Dummy trait for compilation
+// Tray event handler trait
 trait TrayEventHandler {}
 impl TrayEventHandler for () {}
