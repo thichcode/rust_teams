@@ -1,34 +1,67 @@
-name: Release
+name: Build and Release
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - "v*"
 
 jobs:
-  publish:
+  build:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Install tools
-        run: |
-          rustup component add rustfmt clippy
-          cargo install cargo-edit
-      
-      - name: Build
-        run: |
-          cargo build --release
-          mkdir dist
-          cp target/release/rust_teams.exe dist/
-      
-      - name: Package
+
+      - name: Setup Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: x86_64-pc-windows-msvc
+
+      - name: Cache cargo registry
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Extract version
+        id: version
         run: |
           $version = (Get-Content Cargo.toml | Select-String 'version = "(.+)"').Matches.Groups[1].Value
-          Compress-Archive -Path dist/* -DestinationPath rust-teams-v${version}-win-x64.zip
-      
-      - name: Publish Release
+          echo "VERSION=v${version}" >> $env:GITHUB_OUTPUT
+          echo "VERSION_NAME=${version}" >> $env:GITHUB_ENV
+
+      - name: Build release
+        run: |
+          cargo build --release
+          if (!(Test-Path target/release/*.exe)) { Write-Error "No .exe built" }
+          mkdir -p dist
+          $exeTarget = (Get-Item target/release/*.exe)
+          Copy-Item $exeTarget.FullName dist/
+
+      - name: Package archive
+        run: |
+          Compress-Archive -Path dist/* -DestinationPath rust-teams-${{ env.VERSION_NAME }}-win-x64.zip
+
+      - name: Upload zip to artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-teams-${{ steps.version.outputs.VERSION }}-win-x64
+          path: rust-teams-*.zip
+          retention-days: 7
+
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: rust-teams-*.zip
+          tag_name: ${{ steps.version.outputs.VERSION }}
+          name: Release ${{ steps.version.outputs.VERSION }}
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
