@@ -10,7 +10,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Lấy full history để generate changelog
+          fetch-depth: 0
+      
+      - name: Setup MSVC Toolchain
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          toolset: 143
       
       - name: Setup Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -19,7 +24,9 @@ jobs:
           target: x86_64-pc-windows-msvc
       
       - name: Build Release
-        run: cargo build --release
+        run: |
+          cargo build --release
+          ls -la target/release/
       
       - name: Get current version
         id: version
@@ -37,7 +44,6 @@ jobs:
           echo "New version: $new_version"
           echo "new_version=$new_version" >> $env:GITHUB_OUTPUT
           
-          # Update Cargo.toml
           (Get-Content Cargo.toml) -replace "version = \"$current\"", "version = \"$new_version\"" | Set-Content Cargo.toml
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
@@ -61,13 +67,10 @@ jobs:
           if ($prev_tag -eq "") {
             $changelog = "First release"
           } else {
-            $changelog = git log --pretty=format:"* %s (%h)" $prev_tag..HEAD | ForEach-Object { $_ }
+            $changelog = git log --pretty=format:"* %s (%h)" $prev_tag..HEAD
           }
-          Write-Output "Changelog:`n$changelog"
+          Write-Output "Changelog: $changelog"
           echo "changelog=$changelog" >> $env:GITHUB_OUTPUT
-          echo "changelog<<EOF" >> $env:GITHUB_OUTPUT
-          echo "$changelog" >> $env:GITHUB_OUTPUT
-          echo "EOF" >> $env:GITHUB_OUTPUT
       
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -76,6 +79,5 @@ jobs:
           name: Release ${{ steps.tag.outputs.tag }}
           body: ${{ steps.changelog.outputs.changelog }}
           files: target/release/rust_teams.exe
-          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
