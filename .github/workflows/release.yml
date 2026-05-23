@@ -1,0 +1,81 @@
+name: Release
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Lấy full history để generate changelog
+      
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          target: x86_64-pc-windows-msvc
+      
+      - name: Build Release
+        run: cargo build --release
+      
+      - name: Get current version
+        id: version
+        run: |
+          $version = (Get-Content Cargo.toml | Select-String "^version = \"([0-9]+\.[0-9]+\.[0-9]+)\"").Matches[0].Groups[1].Value
+          Write-Output "Current version: $version"
+          echo "current_version=$version" >> $env:GITHUB_OUTPUT
+      
+      - name: Bump version (patch)
+        id: bump
+        run: |
+          $current = "${{ steps.version.outputs.current_version }}"
+          $parts = $current -split '\.'
+          $new_version = "${parts[0]}.${parts[1]}.$($parts[2] + 1)"
+          echo "New version: $new_version"
+          echo "new_version=$new_version" >> $env:GITHUB_OUTPUT
+          
+          # Update Cargo.toml
+          (Get-Content Cargo.toml) -replace "version = \"$current\"", "version = \"$new_version\"" | Set-Content Cargo.toml
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          git add Cargo.toml
+          git commit -m "chore: bump version to v$new_version"
+          git push
+      
+      - name: Create Git Tag
+        id: tag
+        run: |
+          $new_version = "${{ steps.bump.outputs.new_version }}"
+          git tag "v$new_version"
+          git push origin "v$new_version"
+          echo "tag=v$new_version" >> $env:GITHUB_OUTPUT
+      
+      - name: Generate Changelog
+        id: changelog
+        run: |
+          $tag = "${{ steps.tag.outputs.tag }}"
+          $prev_tag = (git describe --tags --abbrev=0 2>$null) || ""
+          if ($prev_tag -eq "") {
+            $changelog = "First release"
+          } else {
+            $changelog = git log --pretty=format:"* %s (%h)" $prev_tag..HEAD | ForEach-Object { $_ }
+          }
+          Write-Output "Changelog:`n$changelog"
+          echo "changelog=$changelog" >> $env:GITHUB_OUTPUT
+          echo "changelog<<EOF" >> $env:GITHUB_OUTPUT
+          echo "$changelog" >> $env:GITHUB_OUTPUT
+          echo "EOF" >> $env:GITHUB_OUTPUT
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: Release ${{ steps.tag.outputs.tag }}
+          body: ${{ steps.changelog.outputs.changelog }}
+          files: target/release/rust_teams.exe
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,8 +1,7 @@
 name: Build
 
 on:
-  push:
-    branches: [ main ]
+  workflow_dispatch:  # Chỉ chạy thủ công
 
 jobs:
   build:
@@ -16,16 +15,5 @@ jobs:
           toolchain: stable
           target: x86_64-pc-windows-msvc
       
-      - name: Update dependencies
-        run: cargo update
-      
       - name: Build
-        run: cargo build --release 2>&1 | tee build.log
-        continue-on-error: true
-      
-      - name: Upload build log
-        uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: build-log
-          path: build.log
+        run: cargo build --release
