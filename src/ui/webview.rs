@@ -1,8 +1,7 @@
-//! WebView2 wrapper - Windows only
+//! WebView2 wrapper - stub implementation
 use anyhow::Result;
 use std::collections::HashMap;
 
-/// WebViewManager - implementation
 pub struct WebViewManager;
 
 impl WebViewManager {

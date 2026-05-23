@@ -1,15 +1,11 @@
-//! System tray icon implementation
-//! For now, using a simple stub that can be expanded later
-
+//! System tray icon - stub implementation
 use anyhow::Result;
 
-pub struct TrayIcon {
-    // Placeholder for tray icon state
-}
+pub struct TrayIcon;
 
 impl TrayIcon {
     pub fn new() -> Result<Self> {
-        Ok(Self {})
+        Ok(Self)
     }
 
     pub fn set_icon(&self, _icon_type: String) -> Result<()> {
@@ -41,6 +37,5 @@ impl TrayIcon {
     }
 }
 
-// Tray event handler trait
-trait TrayEventHandler {}
+pub trait TrayEventHandler {}
 impl TrayEventHandler for () {}
