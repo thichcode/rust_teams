@@ -10,17 +10,21 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       
-      - name: Setup Rust
+      - name: Setup Rust (MSVC)
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
           target: x86_64-pc-windows-msvc
       
+      - name: Install MSVC Toolchain
+        uses: microsoft/setup-msbuild@v2
+      
       - name: Build Release
         run: cargo build --release
+      
+      - name: List release files
+        run: ls -la target/release/
       
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
