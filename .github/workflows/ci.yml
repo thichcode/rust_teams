@@ -18,7 +18,6 @@ jobs:
     
     - name: Build
       run: cargo build --release
-      shell: pwsh
     
     - name: Upload exe artifact
       uses: actions/upload-artifact@v4
