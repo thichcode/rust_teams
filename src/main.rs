@@ -1,6 +1,4 @@
 //! Main application entry point
-extern crate tokio;
-
 use anyhow::Result;
 use std::error::Error;
 
@@ -13,13 +11,7 @@ pub use app::App;
 pub use config::ConfigManager;
 pub use error::AppError;
 
-// Re-export DLLS for MSVC builds
-extern "system" {
-    fn LoadLibraryA(lpLibFileName: *const u8) -> *mut std::ffi::c_void;
-}
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<(), Box<dyn Error>> {
     // Initialize logging
     env_logger::init();
 

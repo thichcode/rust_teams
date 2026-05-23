@@ -42,7 +42,6 @@ impl WindowManager {
         }
         
         let window = builder.build(&event_loop)?;
-        
         self.window = Some(window);
         self.event_loop = Some(event_loop);
         
@@ -73,7 +72,7 @@ impl WindowManager {
 
     pub fn set_size(&self, width: u32, height: u32) -> Result<()> {
         if let Some(window) = &self.window {
-            window.request_inner_size(winit::dpi::LogicalSize::new(
+            let _ = window.request_inner_size(winit::dpi::LogicalSize::new(
                 width as f64,
                 height as f64,
             ));
@@ -118,7 +117,7 @@ impl WindowManager {
         
         event_loop.run(|event, elwt| {
             match event {
-                winit::event::Event::WindowEvent { event, window_id } => {
+                winit::event::Event::WindowEvent { ref event, window_id } => {
                     if let Some(window) = &self.window {
                         if window_id == window.id() {
                             match event {

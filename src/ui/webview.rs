@@ -1,16 +1,14 @@
 //! WebView2 wrapper and management functionality
-//! Using simple stubs that will compile on Linux and work on Windows CI
+//! Windows-specific implementation
 
 use anyhow::Result;
 use std::collections::HashMap;
 
-pub struct WebViewManager {
-    // Placeholder state
-}
+pub struct WebViewManager;
 
 impl WebViewManager {
     pub fn new() -> Result<Self> {
-        Ok(Self {})
+        Ok(Self)
     }
 
     pub fn initialize(&mut self, _hwnd: isize) -> Result<()> {
@@ -70,9 +68,8 @@ impl WebViewManager {
     }
 }
 
-// Handler traits
-trait NavigationHandler {}
+pub trait NavigationHandler {}
 impl NavigationHandler for () {}
 
-trait MessageHandler {}
+pub trait MessageHandler {}
 impl MessageHandler for () {}
