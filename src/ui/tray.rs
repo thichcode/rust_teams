@@ -8,7 +8,7 @@ impl TrayIcon {
         Ok(Self)
     }
 
-    pub fn set_icon(&self, _icon_type: String) -> Result<()> {
+    pub fn set_icon(&self, _icon_type: &str) -> Result<()> {
         Ok(())
     }
 
@@ -16,7 +16,7 @@ impl TrayIcon {
         Ok(())
     }
 
-    pub fn update_menu(&self, _menu_items: Vec<String>) -> Result<()> {
+    pub fn update_menu(&self, _menu_items: &[String]) -> Result<()> {
         Ok(())
     }
 

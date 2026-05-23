@@ -20,16 +20,14 @@ impl ConfigManager {
 
         Self {
             config_path,
-        default_config: AppConfig {
-  window_settings: crate::ui::WindowSettings {
-  width: 1200,
-  height: 800,
-  x: None,
-  y: None,
-  maximized: false,
-  always_on_top: false,
-  transparent: false,
-  },
+ default_config: AppConfig {
+        window_settings: crate::ui::WindowSettings {
+            width: 1200,
+            height: 800,
+            x: None,
+            y: None,
+            maximized: false,
+        },
   profiles: vec![],
   current_profile_id: None,
   },

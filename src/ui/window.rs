@@ -14,7 +14,7 @@ pub struct WindowManager {
 impl WindowManager {
     pub fn new() -> Result<Self> {
         let event_loop = EventLoop::new()?;
-        
+
         Ok(Self {
             window: None,
             event_loop: Some(event_loop),
@@ -24,7 +24,7 @@ impl WindowManager {
     pub fn create_window(&mut self, settings: &WindowSettings) -> Result<()> {
         let event_loop = self.event_loop.take()
             .expect("Event loop already used");
-        
+
         let mut builder = WindowBuilder::new()
             .with_title("Rust Teams")
             .with_inner_size(winit::dpi::LogicalSize::new(
@@ -33,18 +33,18 @@ impl WindowManager {
             ))
             .with_maximized(settings.maximized)
             .with_visible(false);
-        
+
         if let (Some(x), Some(y)) = (settings.x, settings.y) {
             builder = builder.with_position(winit::dpi::LogicalPosition::new(
                 x as f64,
                 y as f64,
             ));
         }
-        
+
         let window = builder.build(&event_loop)?;
         self.window = Some(window);
         self.event_loop = Some(event_loop);
-        
+
         Ok(())
     }
 
@@ -110,11 +110,11 @@ impl WindowManager {
         }
         Ok(())
     }
-    
+
     pub fn run_event_loop(&mut self) -> Result<()> {
         let event_loop = self.event_loop.take()
             .expect("Event loop not initialized");
-        
+
         event_loop.run(|event, elwt| {
             match event {
                 winit::event::Event::WindowEvent { ref event, window_id } => {
@@ -138,7 +138,7 @@ impl WindowManager {
                 _ => {}
             }
         })?;
-        
+
         Ok(())
     }
 }
@@ -150,6 +150,4 @@ pub struct WindowSettings {
     pub x: Option<i32>,
     pub y: Option<i32>,
     pub maximized: bool,
-    pub always_on_top: bool,
-    pub transparent: bool,
 }
