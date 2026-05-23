@@ -1,0 +1,29 @@
+name: Simple Build
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      
+      - name: Build
+        run: cargo build --release
+      
+      - name: Check .exe exists
+        run: |
+          if (Test-Path "target/release/rust_teams.exe") {
+            Write-Output "✅ rust_teams.exe exists!"
+            Get-ChildItem target/release/rust_teams.exe
+          } else {
+            Write-Output "❌ rust_teams.exe NOT FOUND!"
+            exit 1
+          }
