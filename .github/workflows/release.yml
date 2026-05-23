@@ -1,8 +1,8 @@
-name: CI
+name: Release
 
 on:
   push:
-    branches: [ main ]
+    tags: [ 'v*' ]
 
 jobs:
   build:
@@ -20,8 +20,10 @@ jobs:
       run: cargo build --release
       shell: pwsh
     
-    - name: Upload exe artifact
-      uses: actions/upload-artifact@v4
+    - name: Create Release
+      uses: softprops/action-gh-release@v2
       with:
-        name: rust_teams-exe
-        path: target/release/rust_teams.exe
+        name: Release ${{ github.ref_name }}
+        files: target/release/rust_teams.exe
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
