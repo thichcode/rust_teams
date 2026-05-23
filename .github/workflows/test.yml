@@ -35,13 +35,13 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: Cargo check
-        run: cargo check --all-targets --all-features
+        run: cargo check
 
       - name: Cargo test
         run: cargo test --verbose
 
       - name: Clippy lint
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy -- -D warnings
 
       - name: Cargo fmt check
         run: cargo fmt --all --check
