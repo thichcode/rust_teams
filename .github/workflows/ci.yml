@@ -7,12 +7,28 @@ jobs:
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v4
-- uses: actions-rust-lang/setup-rust-toolchain@v1
-  with:
-    toolchain: stable
-    target: x86_64-pc-windows-msvc
-- run: cargo build --release
-    - uses: actions/upload-artifact@v4
+    
+    - name: Setup Rust
+      uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
-        name: rust_teams
+        toolchain: stable
+        target: x86_64-pc-windows-msvc
+    
+    - name: Build
+      run: cargo build --release 2>&1 | Tee-Object -FilePath build.log
+      shell: pwsh
+      continue-on-error: true
+    
+    - name: Upload build log
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: build-log
+        path: build.log
+    
+    - name: Upload exe
+      uses: actions/upload-artifact@v4
+      if: success()
+      with:
+        name: rust_teams-exe
         path: target/release/rust_teams.exe
