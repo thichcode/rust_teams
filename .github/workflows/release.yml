@@ -1,0 +1,42 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      
+      - name: Build Release
+        run: cargo build --release
+      
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust_teams-exe
+          path: target/release/rust_teams.exe
+      
+      - name: Create Release (on tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Release ${{ github.ref_name }}
+          body: |
+            Auto-generated release for ${{ github.ref_name }}
+            
+            **Changes:**
+            - Built from commit ${{ github.sha }}
+          files: target/release/rust_teams.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
