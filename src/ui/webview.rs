@@ -1,9 +1,8 @@
-//! WebView2 wrapper and management functionality
-//! Windows-specific implementation
-
+//! WebView2 wrapper - Windows only
 use anyhow::Result;
 use std::collections::HashMap;
 
+/// WebViewManager - implementation
 pub struct WebViewManager;
 
 impl WebViewManager {
