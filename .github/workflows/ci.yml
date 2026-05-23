@@ -6,7 +6,7 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
     
@@ -14,13 +14,16 @@ jobs:
       uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
         toolchain: stable
-        target: x86_64-pc-windows-msvc
+        target: x86_64-pc-windows-gnu
+    
+    - name: Install MinGW
+      run: sudo apt-get update && sudo apt-get install -y gcc-mingw-w64-x86-64
     
     - name: Build
-      run: cargo build --release
+      run: cargo build --release --target x86_64-pc-windows-gnu
     
     - name: Upload exe artifact
       uses: actions/upload-artifact@v4
       with:
         name: rust_teams-exe
-        path: target/release/rust_teams.exe
+        path: target/x86_64-pc-windows-gnu/release/rust_teams.exe
