@@ -6,7 +6,7 @@
 
 [![CI](https://github.com/thichcode/rust_teams/actions/workflows/ci.yml/badge.svg)](https://github.com/thichcode/rust_teams/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Rust](https://img.shields.io/badge/Rust-1.77+-orange.svg)](https://rust-lang.org)
+[![Rust](https://img.shields.io/badge/Rust-1.96+-orange.svg)](https://rust-lang.org)
 
 </div>
 
@@ -63,7 +63,7 @@ cargo run --release
 ### Requirements
 
 - **Windows 10/11** with WebView2 Runtime (pre-installed on Windows 11)
-- **Rust 1.77+** (for building from source)
+- **Rust 1.96+** (for building from source)
 
 ---
 
@@ -95,7 +95,17 @@ cargo run --release
 
 ## 🛠️ Configuration
 
-Config file location: `%APPDATA%\thuong\rust_teams\config\config.json`
+The configuration system supports multiple profiles, memory optimization, and window settings.
+
+| Setting | Location |
+|---------|----------|
+| **User config** | `%APPDATA%\rust-teams\app\config\config.json` |
+| **Blocked domains** | `config/blocked_domains.json` |
+| **Default template** | `config/default_config.json` |
+
+> Config file is auto-created on first launch with optimized defaults.
+
+**Default configuration:**
 
 ```json
 {

@@ -13,7 +13,7 @@ pub struct ConfigManager {
 
 impl ConfigManager {
     pub fn new() -> Self {
-        let proj_dirs = ProjectDirs::from("com", "thuong", "rust_teams")
+        let proj_dirs = ProjectDirs::from("com", "rust-teams", "app")
             .expect("Failed to get project directories");
         let config_path = proj_dirs.config_dir().join("config.json");
 
