@@ -3,6 +3,7 @@
 pub mod auto_read;
 pub mod badge;
 pub mod browser;
+pub mod console;
 pub mod performance;
 pub mod window_manager;
 

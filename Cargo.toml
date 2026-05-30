@@ -35,7 +35,7 @@ semver = "1.0"
 
 # Windows API (for taskbar badge and notifications)
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["winuser", "shellapi", "winbase", "processthreadsapi"] }
+winapi = { version = "0.3", features = ["winuser", "shellapi", "winbase", "processthreadsapi", "wincon"] }
 
 # Regex for parsing unread count
 regex = "1.0"

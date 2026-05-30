@@ -20,6 +20,7 @@ use config::ConfigManager;
 use ui::auto_read::get_auto_read_script;
 use ui::badge::{parse_unread_count, play_notification_sound};
 use ui::browser::open_url_smart;
+use ui::console::auto_hide_console;
 use ui::performance::get_all_optimization_scripts;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -152,6 +153,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     eprintln!("🔗 Links: Open in running browser (or default)");
     eprintln!("📖 Auto-read: ENABLED (keywords: closed, cancel)");
     eprintln!("⚡ Performance: ENABLED (prefetch, lazy load, cache)");
+    eprintln!();
+    eprintln!("💡 Console will hide in 5 seconds...");
+
+    // Auto-hide console after 5 seconds
+    auto_hide_console(5000);
 
     // Keep webview alive
     let _webview = webview;
