@@ -170,7 +170,6 @@ jobs:
           files: |
             release/rust_teams-windows-x64.exe
             release/rust_teams-windows-x64.zip
-          generate_release_notes: true
           draft: false
           prerelease: false
         env:
