@@ -1,5 +1,5 @@
 //! Rust Teams - Microsoft Teams Desktop Client
-//! Features: Auto-update, Memory Optimization
+//! Features: Auto-update, Memory Optimization, Badge Notifications, URL Interception
 
 mod app;
 mod config;
@@ -8,20 +8,22 @@ mod ui;
 mod updater;
 
 use std::error::Error;
+use std::sync::{Arc, Mutex};
 
 use tao::event::{Event, StartCause, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoop};
-use tao::window::WindowBuilder;
-use wry::{WebViewBuilder, WebViewBuilderExtWindows};
+use tao::window::{WindowBuilder, Icon};
+use wry::{WebViewBuilder, WebViewBuilderExtWindows, NewWindowResponse, NewWindowFeatures};
 
 use app::AppConfig;
 use config::ConfigManager;
+use ui::badge::{parse_unread_count, play_notification_sound};
 
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
 
     // Print version
-    println!("🦀 Rust Teams v{}", updater::current_version());
+    println!("🦀 R Teams v{}", updater::current_version());
 
     // Check for updates in background (non-blocking)
     std::thread::spawn(|| {
@@ -56,11 +58,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Create event loop and window
     let event_loop = EventLoop::new();
     let mut window_builder = WindowBuilder::new()
-        .with_title("Rust Teams")
+        .with_title("R Teams")
         .with_inner_size(tao::dpi::LogicalSize::new(
             config.window_settings.width as f64,
             config.window_settings.height as f64,
         ));
+
+    // Set window icon from embedded resource
+    if let Ok(icon) = load_window_icon() {
+        window_builder = window_builder.with_window_icon(Some(icon));
+    }
 
     if config.window_settings.maximized {
         window_builder = window_builder.with_maximized(true);
@@ -70,8 +77,42 @@ fn main() -> Result<(), Box<dyn Error>> {
         .build(&event_loop)
         .map_err(|e| -> Box<dyn Error> { format!("Failed to create window: {}", e).into() })?;
 
-    // Build WebView with memory optimization
-    let mut webview_builder = WebViewBuilder::new().with_url(&teams_url);
+    // Shared state for badge count
+    let badge_count = Arc::new(Mutex::new(0u32));
+    let badge_count_clone = badge_count.clone();
+
+    // Build WebView with memory optimization and title change handler
+    let mut webview_builder = WebViewBuilder::new()
+        .with_url(&teams_url)
+        .with_document_title_changed_handler(move |title: String| {
+            if let Some(count) = parse_unread_count(&title) {
+                let mut current_count = badge_count_clone.lock().unwrap();
+                if *current_count != count {
+                    *current_count = count;
+                    log::info!("Title changed: '{}' → {} unread", title, count);
+
+                    // Play sound for new messages
+                    if count > 0 {
+                        play_notification_sound();
+                    }
+                }
+            }
+        })
+        .with_new_window_req_handler(|url: String, _features: NewWindowFeatures| {
+            // Intercept navigation - prevent opening in external browser
+            // Instead, navigate in the same WebView
+            log::info!("Intercepted navigation: {}", url);
+
+            // Check if it's a valid Teams URL
+            if url.contains("teams.microsoft.com") || url.contains("microsoft.com") {
+                // Allow Teams URLs - they'll open in the same window
+                NewWindowResponse::Allow
+            } else {
+                // Block external URLs from opening
+                log::warn!("Blocked external URL: {}", url);
+                NewWindowResponse::Deny
+            }
+        });
 
     if config.memory_optimization.enabled {
         webview_builder = webview_builder
@@ -83,8 +124,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         .build(&window)
         .map_err(|e| -> Box<dyn Error> { format!("Failed to create WebView: {}", e).into() })?;
 
-    eprintln!("✅ Window + WebView created successfully!");
-    eprintln!("💡 Multi-window support: WindowManager ready (Ctrl+N coming soon)");
+    eprintln!("✅ R Teams window created successfully!");
+    eprintln!("🔔 Badge notifications: ENABLED");
+    eprintln!("🔗 URL interception: ENABLED (links open in-app)");
 
     // Keep webview alive
     let _webview = webview;
@@ -95,7 +137,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         match event {
             Event::NewEvents(StartCause::Init) => {
-                log::info!("Application initialized");
+                log::info!("R Teams initialized");
             }
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
@@ -113,6 +155,44 @@ fn main() -> Result<(), Box<dyn Error>> {
             _ => {}
         }
     });
+}
+
+/// Load window icon from embedded RGBA data
+fn load_window_icon() -> Result<Icon, Box<dyn Error>> {
+    // 32x32 Teams purple icon with white "R"
+    let size: u32 = 32;
+    let mut rgba = vec![0u8; (size * size * 4) as usize];
+
+    for y in 0..size {
+        for x in 0..size {
+            let idx = ((y * size + x) * 4) as usize;
+
+            // Simple "R" letter approximation
+            let is_r = (x >= 8 && x <= 24 && y >= 6 && y <= 26)
+                && ((x <= 12)
+                    || (y <= 10)
+                    || (y >= 18 && x >= 12 && (x + y) <= 32));
+
+            if is_r {
+                // White for "R"
+                rgba[idx] = 255;
+                rgba[idx + 1] = 255;
+                rgba[idx + 2] = 255;
+                rgba[idx + 3] = 255;
+            } else {
+                // Teams purple background
+                rgba[idx] = 98;  // R
+                rgba[idx + 1] = 100; // G
+                rgba[idx + 2] = 167; // B
+                rgba[idx + 3] = 255; // A
+            }
+        }
+    }
+
+    let icon = Icon::from_rgba(rgba, size, size)
+        .map_err(|e| format!("Failed to create icon: {}", e))?;
+
+    Ok(icon)
 }
 
 /// Get the Teams URL from config profiles, or return the default Teams URL

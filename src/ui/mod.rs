@@ -1,5 +1,6 @@
 //! UI module — Window management, WebView, and multi-window support
 
+pub mod badge;
 pub mod window_manager;
 
 use serde::{Deserialize, Serialize};

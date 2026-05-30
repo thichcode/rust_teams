@@ -2104,12 +2104,14 @@ dependencies = [
  "directories",
  "env_logger",
  "log",
+ "regex",
  "reqwest",
  "semver",
  "serde",
  "serde_json",
  "tao",
  "thiserror 1.0.69",
+ "winapi",
  "wry",
 ]
 
