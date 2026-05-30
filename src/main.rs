@@ -4,6 +4,7 @@
 mod app;
 mod config;
 mod error;
+mod meeting;
 mod ui;
 mod updater;
 

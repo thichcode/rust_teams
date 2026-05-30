@@ -30,12 +30,31 @@ log = "0.4"
 directories = "4.0"
 
 # Auto-update (rustls to avoid OpenSSL CVEs)
-reqwest = { version = "0.12", features = ["json", "blocking", "rustls-tls"], default-features = false }
+reqwest = { version = "0.12", features = ["json", "blocking", "rustls-tls", "multipart"], default-features = false }
 semver = "1.0"
 
-# Windows API (for taskbar badge and notifications)
-[target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3", features = ["winuser", "shellapi", "winbase", "processthreadsapi", "wincon"] }
+# Date/time handling
+chrono = "0.4"
 
 # Regex for parsing unread count
 regex = "1.0"
+
+# Meeting notes - Ollama client
+ollama-rs = "0.3"
+
+# Meeting notes - Audio format
+hound = "3.5"
+
+# Meeting notes - UUID for filenames
+uuid = { version = "1", features = ["v4"] }
+
+# Meeting notes - Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Meeting notes - Async trait
+async-trait = "0.1"
+
+# Windows-specific dependencies
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3", features = ["winuser", "shellapi", "winbase", "processthreadsapi", "wincon"] }
+cpal = "0.13"
