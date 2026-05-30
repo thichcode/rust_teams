@@ -1,98 +1,206 @@
 //! Auto-read messages module - injects JavaScript to mark messages as read
 
 /// JavaScript to auto-read messages containing specific keywords
-/// This runs automatically when the page loads
+/// Optimized for smooth performance with debouncing and deduplication
 pub fn get_auto_read_script() -> String {
     r#"
     (function() {
         'use strict';
         
-        // Keywords to auto-read (case-insensitive)
-        const AUTO_READ_KEYWORDS = ['closed', 'cancel'];
+        // Configuration
+        const CONFIG = {
+            keywords: ['closed', 'cancel'],
+            checkInterval: 3000,      // Check every 3 seconds (was 5)
+            debounceMs: 500,          // Debounce clicks
+            maxClicksPerBatch: 5,     // Limit clicks per batch
+            selectorTimeout: 2000     // Wait for elements to load
+        };
+        
+        // State tracking
+        const state = {
+            clickedElements: new WeakSet(),
+            isRunning: false,
+            lastRun: 0,
+            debounceTimers: new Map()
+        };
+        
+        // Debounce function to prevent rapid clicking
+        function debounce(key, fn, delay) {
+            if (state.debounceTimers.has(key)) {
+                clearTimeout(state.debounceTimers.get(key));
+            }
+            state.debounceTimers.set(key, setTimeout(() => {
+                fn();
+                state.debounceTimers.delete(key);
+            }, delay));
+        }
         
         // Check if message text contains any keyword
         function shouldAutoRead(text) {
-            const lowerText = text.toLowerCase();
-            return AUTO_READ_KEYWORDS.some(keyword => lowerText.includes(keyword));
+            const lowerText = text.toLowerCase().trim();
+            return CONFIG.keywords.some(keyword => lowerText.includes(keyword));
         }
         
-        // Find and click unread message indicators
-        function autoReadMessages() {
-            // Look for unread message indicators in Teams
-            // Teams uses various selectors for unread messages
+        // Safe click with tracking
+        function safeClick(element, description) {
+            if (state.clickedElements.has(element)) {
+                return false; // Already clicked
+            }
             
-            // Method 1: Look for elements with unread indicators
-            const unreadElements = document.querySelectorAll(
-                '[data-unread="true"], ' +
-                '.ts-unread-count, ' +
-                '[class*="unread"], ' +
-                '[class*="badge"]'
-            );
+            state.clickedElements.add(element);
             
-            unreadElements.forEach(el => {
-                const text = el.textContent || el.innerText || '';
-                if (shouldAutoRead(text)) {
-                    // Click to mark as read
-                    el.click();
-                    console.log('[AutoRead] Marked as read:', text.substring(0, 50));
-                }
+            // Use dispatchEvent for smoother interaction
+            const clickEvent = new MouseEvent('click', {
+                view: window,
+                bubbles: true,
+                cancelable: true
             });
+            element.dispatchEvent(clickEvent);
             
-            // Method 2: Look for notification badges
-            const badges = document.querySelectorAll(
-                '.app-bar-badge, ' +
-                '[class*="notification-badge"], ' +
-                '[class*="count-badge"]'
-            );
+            console.log('[AutoRead] ✓', description);
+            return true;
+        }
+        
+        // Main auto-read function with batch processing
+        function autoReadMessages() {
+            // Prevent concurrent runs
+            if (state.isRunning) return;
             
-            badges.forEach(badge => {
-                const count = parseInt(badge.textContent || '0');
-                if (count > 0) {
-                    // Find parent clickable element
-                    const parent = badge.closest('[role="tab"], button, [class*="nav-item"]');
-                    if (parent) {
-                        parent.click();
-                        console.log('[AutoRead] Clicked notification badge');
+            // Throttle execution
+            const now = Date.now();
+            if (now - state.lastRun < CONFIG.debounceMs) return;
+            
+            state.isRunning = true;
+            state.lastRun = now;
+            
+            let clickCount = 0;
+            
+            try {
+                // Priority 1: Find unread chat items with keywords
+                const chatItems = document.querySelectorAll(
+                    '[class*="chat-list"] [class*="item"],' +
+                    '[class*="conversation"] [class*="item"],' +
+                    '[data-tid*="chat-item"],' +
+                    '[class*="thread-list"] [class*="item"]'
+                );
+                
+                for (const item of chatItems) {
+                    if (clickCount >= CONFIG.maxClicksPerBatch) break;
+                    
+                    // Check if already marked as read
+                    if (item.getAttribute('data-auto-read') === 'true') continue;
+                    
+                    const text = item.textContent || '';
+                    if (shouldAutoRead(text)) {
+                        item.setAttribute('data-auto-read', 'true');
+                        if (safeClick(item, 'Chat: ' + text.substring(0, 30))) {
+                            clickCount++;
+                        }
                     }
                 }
-            });
-            
-            // Method 3: Look for chat list items with unread indicators
-            const chatItems = document.querySelectorAll(
-                '[class*="chat-list-item"], ' +
-                '[class*="conversation-item"], ' +
-                '[data-tid*="chat"]'
-            );
-            
-            chatItems.forEach(item => {
-                const text = item.textContent || '';
-                if (shouldAutoRead(text)) {
-                    // Simulate click to mark as read
-                    item.click();
-                    console.log('[AutoRead] Auto-read chat:', text.substring(0, 50));
+                
+                // Priority 2: Find unread indicators/badges
+                const unreadIndicators = document.querySelectorAll(
+                    '[class*="unread-count"],' +
+                    '[class*="badge"][class*="count"],' +
+                    '[data-unread="true"]'
+                );
+                
+                for (const indicator of unreadIndicators) {
+                    if (clickCount >= CONFIG.maxClicksPerBatch) break;
+                    
+                    // Find the parent clickable element
+                    const parentItem = indicator.closest(
+                        '[role="listitem"],' +
+                        '[class*="item"],' +
+                        '[class*="chat"],' +
+                        'button'
+                    );
+                    
+                    if (parentItem && !state.clickedElements.has(parentItem)) {
+                        const text = parentItem.textContent || '';
+                        if (shouldAutoRead(text)) {
+                            if (safeClick(parentItem, 'Badge: ' + text.substring(0, 30))) {
+                                clickCount++;
+                            }
+                        }
+                    }
                 }
-            });
+                
+                // Priority 3: Find notification badges in sidebar
+                const sidebarBadges = document.querySelectorAll(
+                    '.app-bar [class*="badge"],' +
+                    '[class*="nav-item"] [class*="badge"],' +
+                    '[role="tab"] [class*="count"]'
+                );
+                
+                for (const badge of sidebarBadges) {
+                    if (clickCount >= CONFIG.maxClicksPerBatch) break;
+                    
+                    const count = parseInt(badge.textContent || '0');
+                    if (count > 0) {
+                        const tab = badge.closest('[role="tab"], [class*="nav-item"], button');
+                        if (tab) {
+                            debounce('sidebar-' + tab.id, () => {
+                                safeClick(tab, 'Sidebar badge: ' + count);
+                            }, CONFIG.debounceMs);
+                        }
+                    }
+                }
+                
+            } catch (error) {
+                console.error('[AutoRead] Error:', error);
+            } finally {
+                state.isRunning = false;
+            }
         }
         
-        // Run immediately
-        autoReadMessages();
-        
-        // Run periodically (every 5 seconds)
-        setInterval(autoReadMessages, 5000);
-        
-        // Run when DOM changes
+        // Optimized MutationObserver with batching
+        let mutationTimeout = null;
         const observer = new MutationObserver((mutations) => {
-            mutations.forEach(() => {
+            // Batch mutations for better performance
+            if (mutationTimeout) clearTimeout(mutationTimeout);
+            mutationTimeout = setTimeout(() => {
                 autoReadMessages();
-            });
+            }, 100); // Wait 100ms for DOM to settle
         });
         
-        observer.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
+        // Start observing when body is ready
+        function startObserver() {
+            if (document.body) {
+                observer.observe(document.body, {
+                    childList: true,
+                    subtree: true,
+                    attributes: false,  // Don't watch attributes for performance
+                    characterData: false // Don't watch text changes
+                });
+                console.log('[AutoRead] ✓ Observer started');
+            } else {
+                setTimeout(startObserver, 500);
+            }
+        }
         
-        console.log('[AutoRead] Initialized - watching for messages with:', AUTO_READ_KEYWORDS);
+        // Initialize
+        function init() {
+            console.log('[AutoRead] Initializing with keywords:', CONFIG.keywords);
+            
+            // Initial run after page loads
+            setTimeout(() => {
+                autoReadMessages();
+                startObserver();
+            }, CONFIG.selectorTimeout);
+            
+            // Periodic check (backup)
+            setInterval(autoReadMessages, CONFIG.checkInterval);
+        }
+        
+        // Start when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            init();
+        }
+        
     })();
     "#
     .to_string()
@@ -117,76 +225,142 @@ pub fn get_auto_read_script_with_keywords(keywords: &[String]) -> String {
         (function() {{
             'use strict';
             
-            const AUTO_READ_KEYWORDS = {};
+            const CONFIG = {{
+                keywords: {},
+                checkInterval: 3000,
+                debounceMs: 500,
+                maxClicksPerBatch: 5,
+                selectorTimeout: 2000
+            }};
+            
+            const state = {{
+                clickedElements: new WeakSet(),
+                isRunning: false,
+                lastRun: 0,
+                debounceTimers: new Map()
+            }};
+            
+            function debounce(key, fn, delay) {{
+                if (state.debounceTimers.has(key)) {{
+                    clearTimeout(state.debounceTimers.get(key));
+                }}
+                state.debounceTimers.set(key, setTimeout(() => {{
+                    fn();
+                    state.debounceTimers.delete(key);
+                }}, delay));
+            }}
             
             function shouldAutoRead(text) {{
-                const lowerText = text.toLowerCase();
-                return AUTO_READ_KEYWORDS.some(keyword => lowerText.includes(keyword));
+                const lowerText = text.toLowerCase().trim();
+                return CONFIG.keywords.some(keyword => lowerText.includes(keyword));
+            }}
+            
+            function safeClick(element, description) {{
+                if (state.clickedElements.has(element)) return false;
+                state.clickedElements.add(element);
+                
+                const clickEvent = new MouseEvent('click', {{
+                    view: window,
+                    bubbles: true,
+                    cancelable: true
+                }});
+                element.dispatchEvent(clickEvent);
+                console.log('[AutoRead] ✓', description);
+                return true;
             }}
             
             function autoReadMessages() {{
-                const unreadElements = document.querySelectorAll(
-                    '[data-unread="true"], ' +
-                    '.ts-unread-count, ' +
-                    '[class*="unread"], ' +
-                    '[class*="badge"]'
-                );
+                if (state.isRunning) return;
+                const now = Date.now();
+                if (now - state.lastRun < CONFIG.debounceMs) return;
                 
-                unreadElements.forEach(el => {{
-                    const text = el.textContent || el.innerText || '';
-                    if (shouldAutoRead(text)) {{
-                        el.click();
-                        console.log('[AutoRead] Marked as read:', text.substring(0, 50));
-                    }}
-                }});
+                state.isRunning = true;
+                state.lastRun = now;
+                let clickCount = 0;
                 
-                const badges = document.querySelectorAll(
-                    '.app-bar-badge, ' +
-                    '[class*="notification-badge"], ' +
-                    '[class*="count-badge"]'
-                );
-                
-                badges.forEach(badge => {{
-                    const count = parseInt(badge.textContent || '0');
-                    if (count > 0) {{
-                        const parent = badge.closest('[role="tab"], button, [class*="nav-item"]');
-                        if (parent) {{
-                            parent.click();
-                            console.log('[AutoRead] Clicked notification badge');
+                try {{
+                    const chatItems = document.querySelectorAll(
+                        '[class*="chat-list"] [class*="item"],' +
+                        '[class*="conversation"] [class*="item"],' +
+                        '[data-tid*="chat-item"]'
+                    );
+                    
+                    for (const item of chatItems) {{
+                        if (clickCount >= CONFIG.maxClicksPerBatch) break;
+                        if (item.getAttribute('data-auto-read') === 'true') continue;
+                        
+                        const text = item.textContent || '';
+                        if (shouldAutoRead(text)) {{
+                            item.setAttribute('data-auto-read', 'true');
+                            if (safeClick(item, 'Chat: ' + text.substring(0, 30))) {{
+                                clickCount++;
+                            }}
                         }}
                     }}
-                }});
-                
-                const chatItems = document.querySelectorAll(
-                    '[class*="chat-list-item"], ' +
-                    '[class*="conversation-item"], ' +
-                    '[data-tid*="chat"]'
-                );
-                
-                chatItems.forEach(item => {{
-                    const text = item.textContent || '';
-                    if (shouldAutoRead(text)) {{
-                        item.click();
-                        console.log('[AutoRead] Auto-read chat:', text.substring(0, 50));
+                    
+                    const unreadIndicators = document.querySelectorAll(
+                        '[class*="unread-count"],' +
+                        '[class*="badge"][class*="count"]'
+                    );
+                    
+                    for (const indicator of unreadIndicators) {{
+                        if (clickCount >= CONFIG.maxClicksPerBatch) break;
+                        
+                        const parentItem = indicator.closest(
+                            '[role="listitem"], [class*="item"], button'
+                        );
+                        
+                        if (parentItem && !state.clickedElements.has(parentItem)) {{
+                            const text = parentItem.textContent || '';
+                            if (shouldAutoRead(text)) {{
+                                if (safeClick(parentItem, 'Badge: ' + text.substring(0, 30))) {{
+                                    clickCount++;
+                                }}
+                            }}
+                        }}
                     }}
-                }});
+                    
+                }} catch (error) {{
+                    console.error('[AutoRead] Error:', error);
+                }} finally {{
+                    state.isRunning = false;
+                }}
             }}
             
-            autoReadMessages();
-            setInterval(autoReadMessages, 5000);
-            
+            let mutationTimeout = null;
             const observer = new MutationObserver((mutations) => {{
-                mutations.forEach(() => {{
+                if (mutationTimeout) clearTimeout(mutationTimeout);
+                mutationTimeout = setTimeout(autoReadMessages, 100);
+            }});
+            
+            function startObserver() {{
+                if (document.body) {{
+                    observer.observe(document.body, {{
+                        childList: true,
+                        subtree: true,
+                        attributes: false,
+                        characterData: false
+                    }});
+                }} else {{
+                    setTimeout(startObserver, 500);
+                }}
+            }}
+            
+            function init() {{
+                console.log('[AutoRead] Initialized with keywords:', CONFIG.keywords);
+                setTimeout(() => {{
                     autoReadMessages();
-                }});
-            }});
+                    startObserver();
+                }}, CONFIG.selectorTimeout);
+                setInterval(autoReadMessages, CONFIG.checkInterval);
+            }}
             
-            observer.observe(document.body, {{
-                childList: true,
-                subtree: true
-            }});
+            if (document.readyState === 'loading') {{
+                document.addEventListener('DOMContentLoaded', init);
+            }} else {{
+                init();
+            }}
             
-            console.log('[AutoRead] Initialized with keywords:', AUTO_READ_KEYWORDS);
         }})();
         "#,
         keywords_json
