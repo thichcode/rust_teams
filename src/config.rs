@@ -4,12 +4,11 @@ use directories::ProjectDirs;
 use std::fs;
 use std::path::PathBuf;
 
-use crate::app::AppConfig;
+use crate::app::{AppConfig, MemoryOptimization, Profile, WindowSettings};
 
 #[derive(Debug)]
 pub struct ConfigManager {
     config_path: PathBuf,
-    default_config: AppConfig,
 }
 
 impl ConfigManager {
@@ -18,27 +17,38 @@ impl ConfigManager {
             .expect("Failed to get project directories");
         let config_path = proj_dirs.config_dir().join("config.json");
 
-        Self {
-            config_path,
- default_config: AppConfig {
-        window_settings: crate::ui::WindowSettings {
-            width: 1200,
-            height: 800,
-            x: None,
-            y: None,
-            maximized: false,
-        },
-  profiles: vec![],
-  current_profile_id: None,
-  },
+        Self { config_path }
+    }
+
+    pub fn default_config(&self) -> AppConfig {
+        AppConfig {
+            window_settings: WindowSettings {
+                width: 1200,
+                height: 800,
+                x: None,
+                y: None,
+                maximized: false,
+            },
+            profiles: vec![Profile {
+                id: "default".to_string(),
+                name: "Microsoft Teams".to_string(),
+                teams_url: "https://teams.microsoft.com".to_string(),
+                is_default: true,
+            }],
+            current_profile_id: Some("default".to_string()),
+            memory_optimization: MemoryOptimization::default(),
         }
     }
 
     pub fn load(&self) -> Result<AppConfig> {
         if !self.config_path.exists() {
-            eprintln!("Config not found, creating default → {}", self.config_path.display());
-            self.save_defaults()?;
-            return Ok(self.default_config.clone());
+            log::info!(
+                "Config not found, creating default → {}",
+                self.config_path.display()
+            );
+            let default = self.default_config();
+            self.save(&default)?;
+            return Ok(default);
         }
 
         let content = fs::read_to_string(&self.config_path)?;
@@ -47,21 +57,22 @@ impl ConfigManager {
     }
 
     pub fn save(&self, config: &AppConfig) -> Result<()> {
-        fs::create_dir_all(self.config_path.parent().unwrap())?;
+        if let Some(parent) = self.config_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
         let content = serde_json::to_string_pretty(config)?;
         fs::write(&self.config_path, content)?;
-        Ok(())
-    }
-
-    pub fn save_defaults(&self) -> Result<()> {
-        if !self.config_path.exists() {
-            self.save(&self.default_config)?;
-        }
         Ok(())
     }
 
     pub fn validate(&self, _config: &AppConfig) -> Result<()> {
         // TODO: Add validation logic
         Ok(())
+    }
+}
+
+impl Default for ConfigManager {
+    fn default() -> Self {
+        Self::new()
     }
 }

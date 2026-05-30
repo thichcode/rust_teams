@@ -1,7 +1,16 @@
-//! UI module - Window, WebView2, and Tray management
+//! UI module — Window management, WebView, and multi-window support
 
-pub mod window;
-pub mod webview;
-pub mod tray;
+pub mod window_manager;
 
-pub use window::{WindowManager, WindowSettings};
+use serde::{Deserialize, Serialize};
+
+pub use window_manager::WindowManager;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WindowSettings {
+    pub width: u32,
+    pub height: u32,
+    pub x: Option<i32>,
+    pub y: Option<i32>,
+    pub maximized: bool,
+}

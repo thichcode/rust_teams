@@ -22,8 +22,7 @@ impl WindowManager {
     }
 
     pub fn create_window(&mut self, settings: &WindowSettings) -> Result<()> {
-        let event_loop = self.event_loop.take()
-            .expect("Event loop already used");
+        let event_loop = self.event_loop.take().expect("Event loop already used");
 
         let mut builder = WindowBuilder::new()
             .with_title("Rust Teams")
@@ -35,10 +34,7 @@ impl WindowManager {
             .with_visible(false);
 
         if let (Some(x), Some(y)) = (settings.x, settings.y) {
-            builder = builder.with_position(winit::dpi::LogicalPosition::new(
-                x as f64,
-                y as f64,
-            ));
+            builder = builder.with_position(winit::dpi::LogicalPosition::new(x as f64, y as f64));
         }
 
         let window = builder.build(&event_loop)?;
@@ -72,20 +68,15 @@ impl WindowManager {
 
     pub fn set_size(&self, width: u32, height: u32) -> Result<()> {
         if let Some(window) = &self.window {
-            let _ = window.request_inner_size(winit::dpi::LogicalSize::new(
-                width as f64,
-                height as f64,
-            ));
+            let _ = window
+                .request_inner_size(winit::dpi::LogicalSize::new(width as f64, height as f64));
         }
         Ok(())
     }
 
     pub fn set_position(&self, x: i32, y: i32) -> Result<()> {
         if let Some(window) = &self.window {
-            window.set_outer_position(winit::dpi::LogicalPosition::new(
-                x as f64,
-                y as f64,
-            ));
+            window.set_outer_position(winit::dpi::LogicalPosition::new(x as f64, y as f64));
         }
         Ok(())
     }
@@ -112,31 +103,31 @@ impl WindowManager {
     }
 
     pub fn run_event_loop(&mut self) -> Result<()> {
-        let event_loop = self.event_loop.take()
-            .expect("Event loop not initialized");
+        let event_loop = self.event_loop.take().expect("Event loop not initialized");
 
-        event_loop.run(|event, elwt| {
-            match event {
-                winit::event::Event::WindowEvent { ref event, window_id } => {
-                    if let Some(window) = &self.window {
-                        if window_id == window.id() {
-                            match event {
-                                winit::event::WindowEvent::CloseRequested => {
-                                    elwt.exit();
-                                }
-                                winit::event::WindowEvent::Destroyed => {
-                                    elwt.exit();
-                                }
-                                _ => {}
+        event_loop.run(|event, elwt| match event {
+            winit::event::Event::WindowEvent {
+                ref event,
+                window_id,
+            } => {
+                if let Some(window) = &self.window {
+                    if window_id == window.id() {
+                        match event {
+                            winit::event::WindowEvent::CloseRequested => {
+                                elwt.exit();
                             }
+                            winit::event::WindowEvent::Destroyed => {
+                                elwt.exit();
+                            }
+                            _ => {}
                         }
                     }
                 }
-                winit::event::Event::AboutToWait => {
-                    elwt.set_control_flow(ControlFlow::Wait);
-                }
-                _ => {}
             }
+            winit::event::Event::AboutToWait => {
+                elwt.set_control_flow(ControlFlow::Wait);
+            }
+            _ => {}
         })?;
 
         Ok(())
