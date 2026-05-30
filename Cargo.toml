@@ -23,12 +23,12 @@ anyhow = "1.0"
 thiserror = "1.0"
 
 # Logging
-env_logger = "0.9"
+env_logger = "0.11"
 log = "0.4"
 
 # Utilities
 directories = "4.0"
 
-# Auto-update
-reqwest = { version = "0.12", features = ["json", "blocking"] }
+# Auto-update (rustls to avoid OpenSSL CVEs)
+reqwest = { version = "0.12", features = ["json", "blocking", "rustls-tls"], default-features = false }
 semver = "1.0"

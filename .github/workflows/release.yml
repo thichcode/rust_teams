@@ -1,0 +1,115 @@
+name: Auto Tag & Release
+
+on:
+  push:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  tag:
+    name: Auto Tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag_name: ${{ steps.tag.outputs.tag_name }}
+      should_release: ${{ steps.tag.outputs.should_release }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract version and check changes
+        id: tag
+        shell: bash
+        run: |
+          VERSION=$(grep '^version =' Cargo.toml | sed 's/version = "\(.*\)"/\1/' | head -1)
+          TAG="v${VERSION}"
+          echo "tag_name=${TAG}" >> $GITHUB_OUTPUT
+          
+          # Check if tag already exists
+          if git rev-parse "${TAG}" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists"
+            echo "should_release=false" >> $GITHUB_OUTPUT
+          else
+            echo "Creating tag: ${TAG}"
+            git tag "${TAG}"
+            git push origin "${TAG}"
+            echo "should_release=true" >> $GITHUB_OUTPUT
+          fi
+
+  build:
+    name: Build Release
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-release-
+
+      - name: Build (release)
+        run: cargo build --release
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust_teams-windows-x64.exe
+          path: target/release/rust_teams.exe
+          retention-days: 90
+
+  release:
+    name: Create Release
+    needs: [tag, build]
+    runs-on: ubuntu-latest
+    if: needs.tag.outputs.should_release == 'true'
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rust_teams-windows-x64.exe
+          path: release
+
+      - name: Generate release notes
+        id: notes
+        shell: bash
+        run: |
+          TAG="${{ needs.tag.outputs.tag_name }}"
+          NOTES="# Rust Teams ${TAG}"
+          NOTES+="\n\n### Changes"
+          NOTES+="\n- See commit history for details"
+          echo "notes=${NOTES}" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.tag.outputs.tag_name }}
+          name: ${{ needs.tag.outputs.tag_name }}
+          body: ${{ steps.notes.outputs.notes }}
+          files: release/rust_teams-windows-x64.exe
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
