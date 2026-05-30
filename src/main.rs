@@ -17,6 +17,7 @@ use wry::{WebViewBuilder, WebViewBuilderExtWindows, NewWindowResponse, NewWindow
 
 use app::AppConfig;
 use config::ConfigManager;
+use ui::auto_read::get_auto_read_script;
 use ui::badge::{parse_unread_count, play_notification_sound};
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -82,8 +83,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let badge_count_clone = badge_count.clone();
 
     // Build WebView with memory optimization and title change handler
+    let auto_read_js = get_auto_read_script();
     let mut webview_builder = WebViewBuilder::new()
         .with_url(&teams_url)
+        .with_initialization_script(&auto_read_js)
         .with_document_title_changed_handler(move |title: String| {
             if let Some(count) = parse_unread_count(&title) {
                 let mut current_count = badge_count_clone.lock().unwrap();
@@ -127,6 +130,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     eprintln!("✅ R Teams window created successfully!");
     eprintln!("🔔 Badge notifications: ENABLED");
     eprintln!("🔗 URL interception: ENABLED (links open in-app)");
+    eprintln!("📖 Auto-read: ENABLED (keywords: closed, cancel)");
 
     // Keep webview alive
     let _webview = webview;
