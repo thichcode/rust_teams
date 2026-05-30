@@ -1,37 +1,21 @@
 //! Performance optimization module - speeds up Teams content loading
 
 /// JavaScript to optimize Teams performance
-/// Includes lazy loading, prefetch, and DOM optimization
+/// Safe version - does NOT remove or hide UI elements
 pub fn get_performance_script() -> String {
     r#"
     (function() {
         'use strict';
         
-        const PERF_CONFIG = {
-            enablePrefetch: true,
-            enableLazyLoad: true,
-            enableDomOptimization: true,
-            prefetchDelay: 1000,
-            scrollThreshold: 200
-        };
-        
-        // State
-        const state = {
-            prefetched: new Set(),
-            lazyImages: new WeakMap(),
-            isOptimized: false
-        };
+        console.log('[Perf] Loading safe performance optimizations...');
         
         // ========== PREFETCH ==========
         function prefetchLinks() {
-            if (!PERF_CONFIG.enablePrefetch) return;
-            
-            // Prefetch visible links
             const links = document.querySelectorAll('a[href]:not([data-prefetched])');
             
             links.forEach(link => {
                 const href = link.href;
-                if (!href || state.prefetched.has(href)) return;
+                if (!href) return;
                 
                 // Only prefetch Teams/Microsoft links
                 if (!href.includes('teams.microsoft.com') && 
@@ -39,7 +23,7 @@ pub fn get_performance_script() -> String {
                 
                 // Check if link is in viewport
                 const rect = link.getBoundingClientRect();
-                if (rect.top > window.innerHeight + PERF_CONFIG.scrollThreshold) return;
+                if (rect.top > window.innerHeight + 200) return;
                 
                 // Create prefetch link
                 const prefetchLink = document.createElement('link');
@@ -48,115 +32,43 @@ pub fn get_performance_script() -> String {
                 prefetchLink.as = 'document';
                 document.head.appendChild(prefetchLink);
                 
-                state.prefetched.add(href);
                 link.setAttribute('data-prefetched', 'true');
             });
         }
         
-        // ========== LAZY LOADING ==========
+        // ========== LAZY LOADING (images only) ==========
         function setupLazyLoading() {
-            if (!PERF_CONFIG.enableLazyLoad) return;
-            
-            // Observe images for lazy loading
+            // Only handle images with data-src - DO NOT touch buttons/menus
             const imageObserver = new IntersectionObserver((entries) => {
                 entries.forEach(entry => {
                     if (entry.isIntersecting) {
                         const img = entry.target;
                         
-                        // Load data-src if available
                         if (img.dataset.src) {
                             img.src = img.dataset.src;
                             img.removeAttribute('data-src');
                         }
                         
-                        // Load data-srcset if available
                         if (img.dataset.srcset) {
                             img.srcset = img.dataset.srcset;
                             img.removeAttribute('data-srcset');
                         }
                         
-                        img.classList.add('loaded');
                         imageObserver.unobserve(img);
                     }
                 });
             }, {
-                rootMargin: '100px' // Start loading 100px before visible
+                rootMargin: '100px'
             });
             
-            // Observe all images
+            // Only observe images that have data-src
             document.querySelectorAll('img[data-src], img[data-srcset]').forEach(img => {
                 imageObserver.observe(img);
-            });
-            
-            // Observe avatars specifically
-            document.querySelectorAll('[class*="avatar"], [class*="profile"]').forEach(el => {
-                if (el.tagName === 'IMG' || el.querySelector('img')) {
-                    const img = el.tagName === 'IMG' ? el : el.querySelector('img');
-                    if (img) imageObserver.observe(img);
-                }
-            });
-        }
-        
-        // ========== DOM OPTIMIZATION ==========
-        function optimizeDOM() {
-            if (!PERF_CONFIG.enableDomOptimization) return;
-            
-            // Remove empty elements
-            document.querySelectorAll('div:empty, span:empty').forEach(el => {
-                if (!el.classList.length && !el.id) {
-                    el.remove();
-                }
-            });
-            
-            // Optimize scrollable containers
-            document.querySelectorAll('[class*="scroll"], [class*="list"]').forEach(el => {
-                // Add will-change for smoother scrolling
-                el.style.willChange = 'transform';
-                
-                // Enable content-visibility for off-screen content
-                if (el.scrollHeight > window.innerHeight * 2) {
-                    el.style.contentVisibility = 'auto';
-                    el.style.containIntrinsicSize = '0 500px';
-                }
-            });
-            
-            // Optimize animations
-            document.querySelectorAll('[class*="animation"], [class*="transition"]').forEach(el => {
-                el.style.willChange = 'transform, opacity';
-            });
-        }
-        
-        // ========== SCROLL OPTIMIZATION ==========
-        function optimizeScrolling() {
-            // Use passive event listeners for scroll
-            let scrollTimeout;
-            
-            window.addEventListener('scroll', () => {
-                if (scrollTimeout) clearTimeout(scrollTimeout);
-                
-                scrollTimeout = setTimeout(() => {
-                    // Prefetch more content when scrolling
-                    prefetchLinks();
-                    
-                    // Load more lazy images
-                    setupLazyLoading();
-                }, 100);
-            }, { passive: true });
-            
-            // Virtual scrolling for long lists
-            const chatLists = document.querySelectorAll('[class*="chat-list"], [class*="message-list"]');
-            
-            chatLists.forEach(list => {
-                if (list.scrollHeight > window.innerHeight * 3) {
-                    list.style.contentVisibility = 'auto';
-                    list.style.containIntrinsicSize = '0 1000px';
-                }
             });
         }
         
         // ========== RESOURCE HINTS ==========
         function addResourceHints() {
-            // Preconnect to Microsoft servers
             const origins = [
                 'https://teams.microsoft.com',
                 'https://login.microsoftonline.com',
@@ -174,113 +86,49 @@ pub fn get_performance_script() -> String {
             });
         }
         
-        // ========== PERFORMANCE MONITORING ==========
-        function logPerformance() {
-            if (window.performance) {
-                const timing = performance.getEntriesByType('navigation')[0];
-                if (timing) {
-                    console.log('[Perf] DOMContentLoaded:', Math.round(timing.domContentLoadedEventEnd - timing.startTime), 'ms');
-                    console.log('[Perf] Load complete:', Math.round(timing.loadEventEnd - timing.startTime), 'ms');
-                }
-            }
+        // ========== SAFE SCROLL ==========
+        function optimizeScrolling() {
+            // Use passive event listeners for scroll - no DOM modifications
+            window.addEventListener('scroll', () => {
+                // Prefetch more content when scrolling
+                requestAnimationFrame(prefetchLinks);
+            }, { passive: true });
         }
         
-        // ========== MAIN ==========
-        function optimize() {
-            if (state.isOptimized) return;
-            state.isOptimized = true;
+        // ========== INITIALIZE ==========
+        function init() {
+            console.log('[Perf] Applying safe optimizations...');
             
-            console.log('[Perf] Starting optimization...');
-            
-            // Run optimizations
             addResourceHints();
             prefetchLinks();
             setupLazyLoading();
-            optimizeDOM();
             optimizeScrolling();
             
-            // Re-run on DOM changes
-            const observer = new MutationObserver(() => {
-                setupLazyLoading();
-                optimizeDOM();
-            });
-            
-            observer.observe(document.body, {
-                childList: true,
-                subtree: true
-            });
-            
-            // Log performance
-            setTimeout(logPerformance, 2000);
-            
-            console.log('[Perf] ✓ Optimization complete');
+            console.log('[Perf] ✓ Done (no UI modifications)');
         }
         
-        // Initialize
+        // Start when ready
         if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', optimize);
+            document.addEventListener('DOMContentLoaded', init);
         } else {
-            optimize();
+            // Wait a bit for Teams to load
+            setTimeout(init, 2000);
         }
-        
-        // Re-optimize periodically for dynamic content
-        setInterval(() => {
-            state.isOptimized = false;
-            optimize();
-        }, 10000);
         
     })();
     "#
     .to_string()
 }
 
-/// JavaScript for faster chat loading
+/// JavaScript for faster chat loading - SAFE version
 pub fn get_chat_speedup_script() -> String {
     r#"
     (function() {
         'use strict';
         
-        // Intercept fetch requests to cache responses
-        const originalFetch = window.fetch;
-        const cache = new Map();
+        console.log('[ChatSpeed] Loading safe chat optimizations...');
         
-        window.fetch = function(...args) {
-            const url = args[0];
-            
-            // Cache GET requests for 30 seconds
-            if (args[1]?.method === 'GET' || !args[1]?.method) {
-                const cacheKey = typeof url === 'string' ? url : url.url;
-                
-                if (cache.has(cacheKey)) {
-                    const cached = cache.get(cacheKey);
-                    if (Date.now() - cached.time < 30000) {
-                        return Promise.resolve(cached.response.clone());
-                    }
-                }
-                
-                return originalFetch.apply(this, args).then(response => {
-                    cache.set(cacheKey, {
-                        response: response.clone(),
-                        time: Date.now()
-                    });
-                    return response;
-                });
-            }
-            
-            return originalFetch.apply(this, args);
-        };
-        
-        // Optimize XMLHttpRequest too
-        const originalOpen = XMLHttpRequest.prototype.open;
-        const originalSend = XMLHttpRequest.prototype.send;
-        
-        XMLHttpRequest.prototype.open = function(method, url, ...rest) {
-            this._url = url;
-            this._method = method;
-            return originalOpen.call(this, method, url, ...rest);
-        };
-        
-        // Prefetch when hovering over chat items
+        // Only prefetch on hover - no DOM modifications
         document.addEventListener('mouseover', (e) => {
             const chatItem = e.target.closest('[class*="chat-item"], [class*="conversation"]');
             if (chatItem) {
@@ -295,7 +143,6 @@ pub fn get_chat_speedup_script() -> String {
             }
         });
         
-        console.log('[ChatSpeed] ✓ Fetch caching enabled');
         console.log('[ChatSpeed] ✓ Hover prefetch enabled');
         
     })();
