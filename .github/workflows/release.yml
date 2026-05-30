@@ -15,6 +15,7 @@ jobs:
       contents: write
     outputs:
       tag_name: ${{ steps.tag.outputs.tag_name }}
+      version: ${{ steps.tag.outputs.version }}
       should_release: ${{ steps.tag.outputs.should_release }}
 
     steps:
@@ -22,24 +23,53 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Extract version and check changes
+      - name: Auto increment version and create tag
         id: tag
         shell: bash
         run: |
-          VERSION=$(grep '^version =' Cargo.toml | sed 's/version = "\(.*\)"/\1/' | head -1)
-          TAG="v${VERSION}"
-          echo "tag_name=${TAG}" >> $GITHUB_OUTPUT
+          # Get current version from Cargo.toml
+          CURRENT_VERSION=$(grep '^version =' Cargo.toml | sed 's/version = "\(.*\)"/\1/' | head -1)
+          echo "Current version in Cargo.toml: ${CURRENT_VERSION}"
           
-          # Check if tag already exists
-          if git rev-parse "${TAG}" >/dev/null 2>&1; then
-            echo "Tag ${TAG} already exists"
-            echo "should_release=false" >> $GITHUB_OUTPUT
+          # Find the latest tag
+          LATEST_TAG=$(git tag -l "v*" --sort=-version:refname | head -n1)
+          echo "Latest tag: ${LATEST_TAG:-none}"
+          
+          # Auto increment patch version
+          if [ -z "$LATEST_TAG" ]; then
+            # No tags exist, use current version
+            NEW_VERSION="${CURRENT_VERSION}"
           else
-            echo "Creating tag: ${TAG}"
-            git tag "${TAG}"
-            git push origin "${TAG}"
-            echo "should_release=true" >> $GITHUB_OUTPUT
+            # Parse latest tag version
+            LATEST_VERSION="${LATEST_TAG#v}"
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST_VERSION"
+            
+            # Increment patch
+            NEW_PATCH=$((PATCH + 1))
+            NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
           fi
+          
+          TAG="v${NEW_VERSION}"
+          echo "New version: ${NEW_VERSION}"
+          echo "New tag: ${TAG}"
+          
+          # Update Cargo.toml with new version
+          sed -i "s/version = \"${CURRENT_VERSION}\"/version = \"${NEW_VERSION}\"/" Cargo.toml
+          
+          # Commit version bump
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml
+          git commit -m "chore: bump version to ${NEW_VERSION}" || echo "No changes to commit"
+          
+          # Create and push tag
+          git tag "${TAG}"
+          git push origin "${TAG}"
+          git push origin main
+          
+          echo "tag_name=${TAG}" >> $GITHUB_OUTPUT
+          echo "version=${NEW_VERSION}" >> $GITHUB_OUTPUT
+          echo "should_release=true" >> $GITHUB_OUTPUT
 
   build:
     name: Build Release
@@ -123,16 +153,27 @@ jobs:
         shell: bash
         run: |
           TAG="${{ needs.tag.outputs.tag_name }}"
-          NOTES="# Rust Teams ${TAG}"
-          NOTES+="\n\n### 📦 Download"
-          NOTES+="\n- **Windows x64:** \`rust_teams-windows-x64.exe\` (standalone)"
-          NOTES+="\n- **Windows x64 (zip):** \`rust_teams-windows-x64.zip\` (compressed)"
-          NOTES+="\n\n### ⚡ Features"
+          VERSION="${{ needs.tag.outputs.version }}"
+          REPO="${{ github.repository }}"
+          BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
+          
+          NOTES="# R Teams ${TAG}"
+          NOTES+="\n\n### What's New"
+          NOTES+="\n- Auto-incremented version to ${VERSION}"
+          NOTES+="\n- Bug fixes and improvements"
+          NOTES+="\n\n### Download"
+          NOTES+="\n| File | Description |"
+          NOTES+="\n|------|-------------|"
+          NOTES+="\n| [rust_teams-windows-x64.exe](${BASE_URL}/rust_teams-windows-x64.exe) | Standalone executable |"
+          NOTES+="\n| [rust_teams-windows-x64.zip](${BASE_URL}/rust_teams-windows-x64.zip) | Compressed archive |"
+          NOTES+="\n\n### Features"
           NOTES+="\n- WebView2-based Microsoft Teams client"
           NOTES+="\n- Memory optimization (cache, GPU, animations)"
           NOTES+="\n- Auto-update via GitHub Releases"
           NOTES+="\n- Multi-profile support"
-          NOTES+="\n\n### 🔧 Requirements"
+          NOTES+="\n- Badge notifications for unread messages"
+          NOTES+="\n- In-app link navigation (no Edge redirect)"
+          NOTES+="\n\n### Requirements"
           NOTES+="\n- Windows 10/11"
           NOTES+="\n- WebView2 Runtime (built-in on Windows 11)"
           echo "notes=${NOTES}" >> $GITHUB_OUTPUT
