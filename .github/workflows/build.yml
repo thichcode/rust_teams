@@ -12,17 +12,8 @@ env:
 
 jobs:
   build:
-    name: Build (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            artifact_name: rust_teams-windows-x64.exe
-          - os: windows-latest
-            target: i686-pc-windows-msvc
-            artifact_name: rust_teams-windows-x86.exe
+    name: Build (Windows x64)
+    runs-on: windows-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -30,20 +21,27 @@ jobs:
       - name: Install Rust toolchain
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          targets: ${{ matrix.target }}
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache cargo registry & build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
 
       - name: Build (release)
-        run: cargo build --release --target ${{ matrix.target }}
-
-      - name: Strip binary (reduce size)
-        if: matrix.target == 'x86_64-pc-windows-msvc'
-        run: strip target/${{ matrix.target }}/release/rust_teams.exe
+        run: cargo build --release --target x86_64-pc-windows-msvc
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}
-          path: target/${{ matrix.target }}/release/rust_teams.exe
+          name: rust_teams-windows-x64.exe
+          path: target/x86_64-pc-windows-msvc/release/rust_teams.exe
           retention-days: 30
 
   release:
@@ -59,9 +57,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
-
-      - name: List artifacts
-        run: ls -la artifacts/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
