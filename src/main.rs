@@ -132,7 +132,22 @@ fn main() -> Result<(), Box<dyn Error>> {
         .build(&window)
         .map_err(|e| -> Box<dyn Error> { format!("Failed to create WebView: {}", e).into() })?;
 
+    // Check version
+    let current_version = updater::current_version();
+    let version_info = match updater::check_for_update() {
+        Ok(Some(update)) => {
+            format!("📦 Version: v{} (update available: v{})", current_version, update.version)
+        }
+        Ok(None) => {
+            format!("📦 Version: v{} (latest)", current_version)
+        }
+        Err(_) => {
+            format!("📦 Version: v{}", current_version)
+        }
+    };
+
     eprintln!("✅ R Teams window created successfully!");
+    eprintln!("{}", version_info);
     eprintln!("🔔 Badge notifications: ENABLED");
     eprintln!("🔗 Links: Open in running browser (or default)");
     eprintln!("📖 Auto-read: ENABLED (keywords: closed, cancel)");
