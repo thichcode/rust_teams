@@ -67,11 +67,28 @@ jobs:
       - name: Build (release)
         run: cargo build --release
 
-      - name: Upload artifact
+      - name: Prepare release package
+        shell: pwsh
+        run: |
+          # Copy exe with clean name
+          Copy-Item target/release/rust_teams.exe rust_teams-windows-x64.exe
+          # Create zip for download
+          Compress-Archive -Path rust_teams-windows-x64.exe -DestinationPath rust_teams-windows-x64.zip
+          # Show file sizes
+          Get-Item *.exe, *.zip | Select-Object Name, Length
+
+      - name: Upload exe artifact
         uses: actions/upload-artifact@v4
         with:
           name: rust_teams-windows-x64.exe
-          path: target/release/rust_teams.exe
+          path: rust_teams-windows-x64.exe
+          retention-days: 90
+
+      - name: Upload zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust_teams-windows-x64.zip
+          path: rust_teams-windows-x64.zip
           retention-days: 90
 
   release:
@@ -85,11 +102,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download artifact
+      - name: Download exe artifact
         uses: actions/download-artifact@v4
         with:
           name: rust_teams-windows-x64.exe
           path: release
+
+      - name: Download zip artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rust_teams-windows-x64.zip
+          path: release
+
+      - name: List release assets
+        shell: bash
+        run: ls -la release/
 
       - name: Generate release notes
         id: notes
@@ -97,8 +124,17 @@ jobs:
         run: |
           TAG="${{ needs.tag.outputs.tag_name }}"
           NOTES="# Rust Teams ${TAG}"
-          NOTES+="\n\n### Changes"
-          NOTES+="\n- See commit history for details"
+          NOTES+="\n\n### 📦 Download"
+          NOTES+="\n- **Windows x64:** \`rust_teams-windows-x64.exe\` (standalone)"
+          NOTES+="\n- **Windows x64 (zip):** \`rust_teams-windows-x64.zip\` (compressed)"
+          NOTES+="\n\n### ⚡ Features"
+          NOTES+="\n- WebView2-based Microsoft Teams client"
+          NOTES+="\n- Memory optimization (cache, GPU, animations)"
+          NOTES+="\n- Auto-update via GitHub Releases"
+          NOTES+="\n- Multi-profile support"
+          NOTES+="\n\n### 🔧 Requirements"
+          NOTES+="\n- Windows 10/11"
+          NOTES+="\n- WebView2 Runtime (built-in on Windows 11)"
           echo "notes=${NOTES}" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
@@ -107,7 +143,9 @@ jobs:
           tag_name: ${{ needs.tag.outputs.tag_name }}
           name: ${{ needs.tag.outputs.tag_name }}
           body: ${{ steps.notes.outputs.notes }}
-          files: release/rust_teams-windows-x64.exe
+          files: |
+            release/rust_teams-windows-x64.exe
+            release/rust_teams-windows-x64.zip
           generate_release_notes: true
           draft: false
           prerelease: false
