@@ -2,6 +2,7 @@
 
 pub mod auto_read;
 pub mod badge;
+pub mod performance;
 pub mod window_manager;
 
 use serde::{Deserialize, Serialize};
