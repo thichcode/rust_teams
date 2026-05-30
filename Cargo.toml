@@ -1,7 +1,7 @@
 [package]
 name = "rust_teams"
 version = "0.1.5"
-edition = "2024"
+edition = "2024"  # Latest Rust edition (2024)
 
 [features]
 default = ["memory-optimized"]
