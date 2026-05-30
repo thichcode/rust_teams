@@ -65,6 +65,7 @@ impl ConfigManager {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn validate(&self, _config: &AppConfig) -> Result<()> {
         // TODO: Add validation logic
         Ok(())

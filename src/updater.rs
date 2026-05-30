@@ -6,6 +6,7 @@ const REPO: &str = "thichcode/rust_teams";
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct UpdateInfo {
     pub version: String,
     pub download_url: String,

@@ -4,6 +4,7 @@ pub mod window_manager;
 
 use serde::{Deserialize, Serialize};
 
+#[allow(unused_imports)]
 pub use window_manager::WindowManager;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

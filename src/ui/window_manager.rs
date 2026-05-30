@@ -6,6 +6,7 @@ use wry::{WebView, WebViewBuilder, WebViewBuilderExtWindows};
 
 use crate::app::MemoryOptimization;
 
+#[allow(dead_code)]
 /// A managed window with its WebView
 pub struct ManagedWindow {
     pub title: String,
@@ -13,12 +14,14 @@ pub struct ManagedWindow {
     pub webview: WebView,
 }
 
+#[allow(dead_code)]
 /// Manages multiple application windows
 pub struct WindowManager {
     pub windows: Vec<ManagedWindow>,
     memory_config: MemoryOptimization,
 }
 
+#[allow(dead_code)]
 impl WindowManager {
     pub fn new(memory_config: MemoryOptimization) -> Self {
         Self {
