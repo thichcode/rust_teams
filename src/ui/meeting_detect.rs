@@ -1,7 +1,7 @@
 //! Meeting detection JavaScript injection
-//! Monitors Teams window for meeting indicators
+//! Monitors Teams window for meeting indicators and sends IPC messages
 
-/// JavaScript to detect meeting state changes
+/// JavaScript to detect meeting state changes and notify Rust backend
 pub fn get_meeting_detection_script() -> String {
     r#"
     (function() {
@@ -11,6 +11,15 @@ pub fn get_meeting_detection_script() -> String {
         
         let isMeetingActive = false;
         let meetingStartTime = null;
+        
+        // Send message to Rust backend via IPC
+        function notifyBackend(type, data) {
+            if (window.__TAURI_IPC__) {
+                window.__TAURI_IPC__.invoke(type, data);
+            } else if (window.chrome?.webview?.postMessage) {
+                window.chrome.webview.postMessage(JSON.stringify({type, data}));
+            }
+        }
         
         // Check if we're in a meeting
         function checkMeetingState() {
@@ -65,12 +74,11 @@ pub fn get_meeting_detection_script() -> String {
                 meetingStartTime = new Date();
                 console.log('[MeetingDetect] Meeting started at', meetingStartTime.toISOString());
                 
-                // Notify parent window
-                window.postMessage({
-                    type: 'MEETING_STATE_CHANGED',
+                // Notify Rust backend via IPC
+                notifyBackend('meeting_state_changed', {
                     active: true,
                     startTime: meetingStartTime.toISOString()
-                }, '*');
+                });
                 
             } else if (!meetingDetected && isMeetingActive) {
                 isMeetingActive = false;
@@ -78,12 +86,12 @@ pub fn get_meeting_detection_script() -> String {
                     Math.round((new Date() - meetingStartTime) / 1000) : 0;
                 console.log('[MeetingDetect] Meeting ended, duration:', duration, 'seconds');
                 
-                // Notify parent window
-                window.postMessage({
-                    type: 'MEETING_STATE_CHANGED',
+                // Notify Rust backend via IPC
+                notifyBackend('meeting_state_changed', {
                     active: false,
-                    duration: duration
-                }, '*');
+                    duration: duration,
+                    startTime: meetingStartTime?.toISOString()
+                });
                 
                 meetingStartTime = null;
             }

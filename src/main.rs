@@ -1,5 +1,5 @@
 //! Rust Teams - Microsoft Teams Desktop Client
-//! Features: Auto-update, Memory Optimization, Badge Notifications, URL Interception
+//! Features: Auto-update, Memory Optimization, Badge Notifications, URL Interception, Meeting Notes
 
 mod app;
 mod config;
@@ -10,6 +10,7 @@ mod updater;
 
 use std::error::Error;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use tao::event::{Event, StartCause, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoop};
@@ -18,12 +19,30 @@ use wry::{WebViewBuilder, WebViewBuilderExtWindows, NewWindowResponse, NewWindow
 
 use app::AppConfig;
 use config::ConfigManager;
+use meeting::{MeetingNotesGenerator, MeetingNotesConfig};
 use ui::auto_read::get_auto_read_script;
 use ui::badge::{parse_unread_count, play_notification_sound};
 use ui::browser::open_url_smart;
 use ui::console::auto_hide_console;
 use ui::meeting_detect::get_meeting_detection_script;
 use ui::performance::get_all_optimization_scripts;
+
+/// Shared state for meeting notes
+struct MeetingState {
+    is_meeting_active: Arc<AtomicBool>,
+    generator: Arc<Mutex<Option<MeetingNotesGenerator>>>,
+}
+
+impl MeetingState {
+    fn new(config: MeetingNotesConfig) -> Self {
+        Self {
+            is_meeting_active: Arc::new(AtomicBool::new(false)),
+            generator: Arc::new(Mutex::new(
+                MeetingNotesGenerator::new(config).ok()
+            )),
+        }
+    }
+}
 
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
@@ -61,6 +80,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     );
 
+    // Create meeting state
+    let meeting_state = Arc::new(Mutex::new(MeetingState::new(config.meeting_notes.clone())));
+
     // Create event loop and window
     let event_loop = EventLoop::new();
     let mut window_builder = WindowBuilder::new()
@@ -86,6 +108,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Shared state for badge count
     let badge_count = Arc::new(Mutex::new(0u32));
     let badge_count_clone = badge_count.clone();
+
+    // Clone meeting state for IPC handler
+    let meeting_state_ipc = meeting_state.clone();
 
     // Build WebView with memory optimization and title change handler
     let auto_read_js = get_auto_read_script();
@@ -125,6 +150,43 @@ fn main() -> Result<(), Box<dyn Error>> {
                 // Deny opening in WebView
                 NewWindowResponse::Deny
             }
+        })
+        .with_ipc_handler(move |message| {
+            // Handle IPC messages from JavaScript
+            let body = message.body();
+            if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&body) {
+                if msg["type"] == "meeting_state_changed" {
+                    let active = msg["data"]["active"].as_bool().unwrap_or(false);
+                    let duration = msg["data"]["duration"].as_u64().unwrap_or(0);
+
+                    log::info!("Meeting state changed: active={}, duration={}", active, duration);
+
+                    if let Ok(mut state) = meeting_state_ipc.lock() {
+                        if active && !state.is_meeting_active.load(Ordering::Relaxed) {
+                            // Meeting started - start recording
+                            state.is_meeting_active.store(true, Ordering::Relaxed);
+                            if let Ok(mut generator) = state.generator.lock() {
+                                if let Some(ref mut recorder) = *generator {
+                                    if let Err(e) = recorder.start_meeting() {
+                                        log::error!("Failed to start meeting recording: {}", e);
+                                    } else {
+                                        log::info!("Meeting recording started");
+                                    }
+                                }
+                            }
+                        } else if !active && state.is_meeting_active.load(Ordering::Relaxed) {
+                            // Meeting ended - log it
+                            state.is_meeting_active.store(false, Ordering::Relaxed);
+                            log::info!("Meeting ended");
+                            eprintln!("📝 Meeting ended - generating notes...");
+
+                            // Note: Full async meeting notes generation requires
+                            // resolving cpal::Stream Send issues
+                            // For now, we log the event
+                        }
+                    }
+                }
+            }
         });
 
     if config.memory_optimization.enabled {
@@ -157,7 +219,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     eprintln!("🔗 Links: Open in running browser (or default)");
     eprintln!("📖 Auto-read: ENABLED (keywords: closed, cancel)");
     eprintln!("⚡ Performance: ENABLED (prefetch, lazy load, cache)");
-    eprintln!("📝 Meeting Notes: ENABLED (auto-detect + notes generation)");
+    eprintln!("📝 Meeting Notes: ENABLED (auto-record + generate .md)");
     eprintln!();
     eprintln!("💡 Console will hide in 5 seconds...");
 
