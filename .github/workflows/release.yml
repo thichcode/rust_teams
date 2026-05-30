@@ -8,71 +8,46 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  tag:
-    name: Auto Tag
+  check:
+    name: Check for Release
     runs-on: ubuntu-latest
     permissions:
       contents: write
     outputs:
-      tag_name: ${{ steps.tag.outputs.tag_name }}
-      version: ${{ steps.tag.outputs.version }}
-      should_release: ${{ steps.tag.outputs.should_release }}
+      tag_name: ${{ steps.check.outputs.tag_name }}
+      version: ${{ steps.check.outputs.version }}
+      should_release: ${{ steps.check.outputs.should_release }}
 
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Auto increment version and create tag
-        id: tag
+      - name: Check if release needed
+        id: check
         shell: bash
         run: |
           # Get current version from Cargo.toml
-          CURRENT_VERSION=$(grep '^version =' Cargo.toml | sed 's/version = "\(.*\)"/\1/' | head -1)
-          echo "Current version in Cargo.toml: ${CURRENT_VERSION}"
+          VERSION=$(grep '^version =' Cargo.toml | sed 's/version = "\(.*\)"/\1/' | head -1)
+          TAG="v${VERSION}"
+          echo "Current version: ${VERSION}"
+          echo "Tag to check: ${TAG}"
           
-          # Find the latest tag
-          LATEST_TAG=$(git tag -l "v*" --sort=-version:refname | head -n1)
-          echo "Latest tag: ${LATEST_TAG:-none}"
-          
-          # Auto increment patch version
-          if [ -z "$LATEST_TAG" ]; then
-            # No tags exist, use current version
-            NEW_VERSION="${CURRENT_VERSION}"
+          # Check if tag already exists
+          if git rev-parse "${TAG}" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists - skipping release"
+            echo "should_release=false" >> $GITHUB_OUTPUT
           else
-            # Parse latest tag version
-            LATEST_VERSION="${LATEST_TAG#v}"
-            IFS='.' read -r MAJOR MINOR PATCH <<< "$LATEST_VERSION"
-            
-            # Increment patch
-            NEW_PATCH=$((PATCH + 1))
-            NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
+            echo "Tag ${TAG} does not exist - will create release"
+            echo "tag_name=${TAG}" >> $GITHUB_OUTPUT
+            echo "version=${VERSION}" >> $GITHUB_OUTPUT
+            echo "should_release=true" >> $GITHUB_OUTPUT
           fi
-          
-          TAG="v${NEW_VERSION}"
-          echo "New version: ${NEW_VERSION}"
-          echo "New tag: ${TAG}"
-          
-          # Update Cargo.toml with new version
-          sed -i "s/version = \"${CURRENT_VERSION}\"/version = \"${NEW_VERSION}\"/" Cargo.toml
-          
-          # Commit version bump
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Cargo.toml
-          git commit -m "chore: bump version to ${NEW_VERSION}" || echo "No changes to commit"
-          
-          # Create and push tag
-          git tag "${TAG}"
-          git push origin "${TAG}"
-          git push origin main
-          
-          echo "tag_name=${TAG}" >> $GITHUB_OUTPUT
-          echo "version=${NEW_VERSION}" >> $GITHUB_OUTPUT
-          echo "should_release=true" >> $GITHUB_OUTPUT
 
   build:
     name: Build Release
+    needs: check
+    if: needs.check.outputs.should_release == 'true'
     runs-on: windows-latest
     permissions:
       contents: write
@@ -123,9 +98,9 @@ jobs:
 
   release:
     name: Create Release
-    needs: [tag, build]
+    needs: [check, build]
     runs-on: ubuntu-latest
-    if: needs.tag.outputs.should_release == 'true'
+    if: needs.check.outputs.should_release == 'true'
     permissions:
       contents: write
 
@@ -152,14 +127,14 @@ jobs:
         id: notes
         shell: bash
         run: |
-          TAG="${{ needs.tag.outputs.tag_name }}"
-          VERSION="${{ needs.tag.outputs.version }}"
+          TAG="${{ needs.check.outputs.tag_name }}"
+          VERSION="${{ needs.check.outputs.version }}"
           REPO="${{ github.repository }}"
           BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
           
           NOTES="# R Teams ${TAG}"
           NOTES+="\n\n### What's New"
-          NOTES+="\n- Auto-incremented version to ${VERSION}"
+          NOTES+="\n- Version ${VERSION}"
           NOTES+="\n- Bug fixes and improvements"
           NOTES+="\n\n### Download"
           NOTES+="\n| File | Description |"
@@ -178,11 +153,19 @@ jobs:
           NOTES+="\n- WebView2 Runtime (built-in on Windows 11)"
           echo "notes=${NOTES}" >> $GITHUB_OUTPUT
 
+      - name: Create tag
+        run: |
+          TAG="${{ needs.check.outputs.tag_name }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "${TAG}"
+          git push origin "${TAG}"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.tag.outputs.tag_name }}
-          name: ${{ needs.tag.outputs.tag_name }}
+          tag_name: ${{ needs.check.outputs.tag_name }}
+          name: ${{ needs.check.outputs.tag_name }}
           body: ${{ steps.notes.outputs.notes }}
           files: |
             release/rust_teams-windows-x64.exe
