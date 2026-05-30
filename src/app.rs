@@ -2,6 +2,7 @@
 use serde::{Deserialize, Serialize};
 
 pub use crate::ui::WindowSettings;
+pub use crate::meeting::config::MeetingNotesConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
@@ -10,10 +11,16 @@ pub struct AppConfig {
     pub current_profile_id: Option<String>,
     #[serde(default = "default_memory_config")]
     pub memory_optimization: MemoryOptimization,
+    #[serde(default = "default_meeting_notes_config")]
+    pub meeting_notes: MeetingNotesConfig,
 }
 
 fn default_memory_config() -> MemoryOptimization {
     MemoryOptimization::default()
+}
+
+fn default_meeting_notes_config() -> MeetingNotesConfig {
+    MeetingNotesConfig::default()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

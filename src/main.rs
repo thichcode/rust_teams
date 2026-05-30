@@ -22,6 +22,7 @@ use ui::auto_read::get_auto_read_script;
 use ui::badge::{parse_unread_count, play_notification_sound};
 use ui::browser::open_url_smart;
 use ui::console::auto_hide_console;
+use ui::meeting_detect::get_meeting_detection_script;
 use ui::performance::get_all_optimization_scripts;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -89,10 +90,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Build WebView with memory optimization and title change handler
     let auto_read_js = get_auto_read_script();
     let perf_js = get_all_optimization_scripts();
+    let meeting_js = get_meeting_detection_script();
     let mut webview_builder = WebViewBuilder::new()
         .with_url(&teams_url)
         .with_initialization_script(&auto_read_js)
         .with_initialization_script(&perf_js)
+        .with_initialization_script(&meeting_js)
         .with_document_title_changed_handler(move |title: String| {
             if let Some(count) = parse_unread_count(&title) {
                 let mut current_count = badge_count_clone.lock().unwrap();
@@ -154,6 +157,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     eprintln!("🔗 Links: Open in running browser (or default)");
     eprintln!("📖 Auto-read: ENABLED (keywords: closed, cancel)");
     eprintln!("⚡ Performance: ENABLED (prefetch, lazy load, cache)");
+    eprintln!("📝 Meeting Notes: ENABLED (auto-detect + notes generation)");
     eprintln!();
     eprintln!("💡 Console will hide in 5 seconds...");
 

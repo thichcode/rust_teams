@@ -5,6 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::app::{AppConfig, MemoryOptimization, Profile, WindowSettings};
+use crate::meeting::config::MeetingNotesConfig;
 
 #[derive(Debug)]
 pub struct ConfigManager {
@@ -37,6 +38,7 @@ impl ConfigManager {
             }],
             current_profile_id: Some("default".to_string()),
             memory_optimization: MemoryOptimization::default(),
+            meeting_notes: MeetingNotesConfig::default(),
         }
     }
 
