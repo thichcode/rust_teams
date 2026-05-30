@@ -1,0 +1,57 @@
+version: 2
+updates:
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Asia/Ho_Chi_Minh"
+    labels:
+      - "dependencies"
+      - "rust"
+    # Ignore Linux-only GTK/glib alerts — this project is Windows-only
+    # wry/tao pull in glib for Linux build target but we only target Windows
+    ignore:
+      - dependency-name: "glib"
+        versions: ["*"]
+      - dependency-name: "glib-sys"
+        versions: ["*"]
+      - dependency-name: "gdk-pixbuf-sys"
+        versions: ["*"]
+      - dependency-name: "atk"
+        versions: ["*"]
+      - dependency-name: "atk-sys"
+        versions: ["*"]
+      - dependency-name: "gtk"
+        versions: ["*"]
+      - dependency-name: "gtk-sys"
+        versions: ["*"]
+      - dependency-name: "pango"
+        versions: ["*"]
+      - dependency-name: "pango-sys"
+        versions: ["*"]
+      - dependency-name: "cairo-rs"
+        versions: ["*"]
+      - dependency-name: "cairo-sys-rs"
+        versions: ["*"]
+      - dependency-name: "gdk"
+        versions: ["*"]
+      - dependency-name: "gdk-sys"
+        versions: ["*"]
+      - dependency-name: "gdkx11"
+        versions: ["*"]
+      - dependency-name: "gdkx11-sys"
+        versions: ["*"]
+      - dependency-name: "webkit2gtk"
+        versions: ["*"]
+      - dependency-name: "webkit2gtk-sys"
+        versions: ["*"]
+      - dependency-name: "soup3"
+        versions: ["*"]
+      - dependency-name: "soup3-sys"
+        versions: ["*"]
+      - dependency-name: "javascriptcore-rs"
+        versions: ["*"]
+      - dependency-name: "javascriptcore-rs-sys"
+        versions: ["*"]

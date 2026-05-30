@@ -12,7 +12,7 @@ memory-optimized = []
 tao = { version = "0.35", features = ["serde"] }
 
 # WebView rendering (uses WebView2 on Windows)
-wry = { version = "0.55", features = ["devtools"] }
+wry = { version = "0.55", features = ["devtools"], default-features = false }
 
 # Config & Serialization
 serde = { version = "1.0", features = ["derive"] }
