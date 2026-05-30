@@ -19,6 +19,7 @@ use app::AppConfig;
 use config::ConfigManager;
 use ui::auto_read::get_auto_read_script;
 use ui::badge::{parse_unread_count, play_notification_sound};
+use ui::browser::open_url_smart;
 use ui::performance::get_all_optimization_scripts;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -105,17 +106,18 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
         })
         .with_new_window_req_handler(|url: String, _features: NewWindowFeatures| {
-            // Intercept navigation - prevent opening in external browser
-            // Instead, navigate in the same WebView
             log::info!("Intercepted navigation: {}", url);
 
-            // Check if it's a valid Teams URL
+            // Check if it's a Teams/Microsoft URL
             if url.contains("teams.microsoft.com") || url.contains("microsoft.com") {
-                // Allow Teams URLs - they'll open in the same window
+                // Allow Teams URLs - open in same window
                 NewWindowResponse::Allow
             } else {
-                // Block external URLs from opening
-                log::warn!("Blocked external URL: {}", url);
+                // External URL - try to open in running browser
+                if let Err(e) = open_url_smart(&url) {
+                    log::warn!("Failed to open URL: {}", e);
+                }
+                // Deny opening in WebView
                 NewWindowResponse::Deny
             }
         });
@@ -132,7 +134,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     eprintln!("✅ R Teams window created successfully!");
     eprintln!("🔔 Badge notifications: ENABLED");
-    eprintln!("🔗 URL interception: ENABLED (links open in-app)");
+    eprintln!("🔗 Links: Open in running browser (or default)");
     eprintln!("📖 Auto-read: ENABLED (keywords: closed, cancel)");
     eprintln!("⚡ Performance: ENABLED (prefetch, lazy load, cache)");
 

@@ -2,6 +2,7 @@
 
 pub mod auto_read;
 pub mod badge;
+pub mod browser;
 pub mod performance;
 pub mod window_manager;
 
