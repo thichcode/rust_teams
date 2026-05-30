@@ -25,6 +25,7 @@ pub fn play_notification_sound() {
 /// Update taskbar badge with unread count
 /// Note: Windows 10+ badge API requires COM initialization
 /// For now, we log the count and play sound
+#[allow(dead_code)]
 pub fn update_taskbar_badge(_hwnd: isize, count: u32) {
     if count > 0 {
         log::info!("Badge update: {} unread messages", count);
