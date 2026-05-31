@@ -132,44 +132,49 @@ jobs:
           REPO="${{ github.repository }}"
           BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
           
-          NOTES="## R Teams ${TAG}"
-          NOTES+="\n"
-          NOTES+="\n---"
-          NOTES+="\n"
-          NOTES+="\n### What's New"
-          NOTES+="\n"
-          NOTES+="\n> Version ${VERSION} - Latest features and improvements"
-          NOTES+="\n"
-          NOTES+="\n---"
-          NOTES+="\n"
-          NOTES+="\n### Download"
-          NOTES+="\n"
-          NOTES+="\n| File | Size | Description |"
-          NOTES+="\n|------|------|-------------|"
-          NOTES+="\n| [rust_teams-windows-x64.exe](${BASE_URL}/rust_teams-windows-x64.exe) | ~5MB | Standalone executable |"
-          NOTES+="\n| [rust_teams-windows-x64.zip](${BASE_URL}/rust_teams-windows-x64.zip) | ~2MB | Compressed archive |"
-          NOTES+="\n"
-          NOTES+="\n### Features"
-          NOTES+="\n"
-          NOTES+="\n- **WebView2 Engine** - Lightweight Microsoft Teams client"
-          NOTES+="\n- **Memory Optimized** - ~80MB RAM usage (vs 400MB+ Electron)"
-          NOTES+="\n- **Auto-Update** - Seamless updates via GitHub Releases"
-          NOTES+="\n- **Multi-Profile** - Switch between Teams accounts"
-          NOTES+="\n- **Badge Notifications** - Unread message counter"
-          NOTES+="\n- **Auto-Read** - Mark messages with keywords as read"
-          NOTES+="\n- **Smart Links** - Open in running browser"
-          NOTES+="\n- **Performance** - Prefetch, lazy load, caching"
-          NOTES+="\n- **Meeting Notes** - Auto-detect and generate notes"
-          NOTES+="\n"
-          NOTES+="\n### System Requirements"
-          NOTES+="\n"
-          NOTES+="\n- Windows 10/11 (64-bit)"
-          NOTES+="\n- WebView2 Runtime (pre-installed on Windows 11)"
-          NOTES+="\n- ~10MB disk space"
-          NOTES+="\n"
-          NOTES+="\n---"
-          NOTES+="\n"
-          NOTES+="\n<sub>Built with Rust ${VERSION} | [Report Issues](https://github.com/${REPO}/issues)</sub>"
+          cat > /tmp/release_notes.md << 'EOF'
+          ## R Teams ${TAG}
+          
+          ---
+          
+          ### What's New
+          
+          > Version ${VERSION} - Latest features and improvements
+          
+          ---
+          
+          ### Download
+          
+          | File | Size | Description |
+          |------|------|-------------|
+          | [rust_teams-windows-x64.exe](${BASE_URL}/rust_teams-windows-x64.exe) | ~5MB | Standalone executable |
+          | [rust_teams-windows-x64.zip](${BASE_URL}/rust_teams-windows-x64.zip) | ~2MB | Compressed archive |
+          
+          ### Features
+          
+          - **WebView2 Engine** - Lightweight Microsoft Teams client
+          - **Memory Optimized** - ~80MB RAM usage (vs 400MB+ Electron)
+          - **Auto-Update** - Seamless updates via GitHub Releases
+          - **Multi-Profile** - Switch between Teams accounts
+          - **Badge Notifications** - Unread message counter
+          - **Auto-Read** - Mark messages with keywords as read
+          - **Smart Links** - Open in running browser
+          - **Performance** - Prefetch, lazy load, caching
+          - **Meeting Notes** - Auto-detect and generate notes
+          
+          ### System Requirements
+          
+          - Windows 10/11 (64-bit)
+          - WebView2 Runtime (pre-installed on Windows 11)
+          - ~10MB disk space
+          
+          ---
+          
+          <sub>Built with Rust ${VERSION} | [Report Issues](https://github.com/${REPO}/issues)</sub>
+          EOF
+          
+          # Process the heredoc with variable substitution
+          NOTES=$(cat /tmp/release_notes.md | sed "s/\${TAG}/${TAG}/g" | sed "s/\${VERSION}/${VERSION}/g" | sed "s|\${BASE_URL}|${BASE_URL}|g" | sed "s|\${REPO}|${REPO}|g")
           echo "notes=${NOTES}" >> $GITHUB_OUTPUT
 
       - name: Create tag
