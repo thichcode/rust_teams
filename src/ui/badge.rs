@@ -24,12 +24,11 @@ pub fn play_notification_sound() {
 pub fn update_taskbar_badge(hwnd: isize, count: u32) {
     #[cfg(target_os = "windows")]
     unsafe {
-        use winapi::um::winuser::SetWindowTextW;
+        use winapi::um::winuser::{SetWindowTextW, FlashWindow};
         
-        // Update window title to show badge count
-        // This is a simple way to show badge on taskbar
+        // Update window title with count at the beginning
         let title = if count > 0 {
-            format!("R Teams ({})", count)
+            format!("({}) R Teams", count)
         } else {
             "R Teams".to_string()
         };
@@ -38,6 +37,11 @@ pub fn update_taskbar_badge(hwnd: isize, count: u32) {
         let wide_title: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
         
         SetWindowTextW(hwnd as *mut _, wide_title.as_ptr());
+        
+        // Flash taskbar if there are new messages
+        if count > 0 {
+            FlashWindow(hwnd as *mut _, 1); // 1 = flash until foreground
+        }
         
         log::info!("Badge updated: {} unread messages", count);
     }
