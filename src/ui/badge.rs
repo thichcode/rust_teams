@@ -1,8 +1,5 @@
 //! Taskbar badge and notification sound for Windows
 
-#[cfg(target_os = "windows")]
-use winapi::um::winuser::{MessageBeep, MB_ICONASTERISK};
-
 use regex::Regex;
 
 /// Parse unread count from Teams page title
@@ -18,19 +15,31 @@ pub fn parse_unread_count(title: &str) -> Option<u32> {
 pub fn play_notification_sound() {
     #[cfg(target_os = "windows")]
     unsafe {
+        use winapi::um::winuser::{MessageBeep, MB_ICONASTERISK};
         MessageBeep(MB_ICONASTERISK);
     }
 }
 
-/// Update taskbar badge with unread count
-/// Note: Windows 10+ badge API requires COM initialization
-/// For now, we log the count and play sound
-#[allow(dead_code)]
-pub fn update_taskbar_badge(_hwnd: isize, count: u32) {
-    if count > 0 {
-        log::info!("Badge update: {} unread messages", count);
-    } else {
-        log::info!("Badge cleared: no unread messages");
+/// Update taskbar badge with unread count using Windows API
+pub fn update_taskbar_badge(hwnd: isize, count: u32) {
+    #[cfg(target_os = "windows")]
+    unsafe {
+        use winapi::um::winuser::SetWindowTextW;
+        
+        // Update window title to show badge count
+        // This is a simple way to show badge on taskbar
+        let title = if count > 0 {
+            format!("R Teams ({})", count)
+        } else {
+            "R Teams".to_string()
+        };
+        
+        // Convert to wide string
+        let wide_title: Vec<u16> = title.encode_utf16().chain(std::iter::once(0)).collect();
+        
+        SetWindowTextW(hwnd as *mut _, wide_title.as_ptr());
+        
+        log::info!("Badge updated: {} unread messages", count);
     }
 }
 

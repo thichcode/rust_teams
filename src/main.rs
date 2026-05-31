@@ -15,13 +15,15 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tao::event::{Event, StartCause, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoop};
 use tao::window::{WindowBuilder, Icon};
+#[cfg(target_os = "windows")]
+use tao::platform::windows::WindowExtWindows;
 use wry::{WebViewBuilder, WebViewBuilderExtWindows, NewWindowResponse, NewWindowFeatures};
 
 use app::AppConfig;
 use config::ConfigManager;
 use meeting::{MeetingNotesGenerator, MeetingNotesConfig};
 use ui::auto_read::get_auto_read_script;
-use ui::badge::{parse_unread_count, play_notification_sound};
+use ui::badge::{parse_unread_count, play_notification_sound, update_taskbar_badge};
 use ui::browser::open_url_smart;
 use ui::console::auto_hide_console;
 use ui::meeting_detect::get_meeting_detection_script;
@@ -128,9 +130,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         .build(&event_loop)
         .map_err(|e| -> Box<dyn Error> { format!("Failed to create window: {}", e).into() })?;
 
+    // Get window handle for badge updates
+    #[cfg(target_os = "windows")]
+    let hwnd = window.hwnd() as isize;
+    #[cfg(not(target_os = "windows"))]
+    let hwnd = 0isize;
+
     // Shared state for badge count
     let badge_count = Arc::new(Mutex::new(0u32));
     let badge_count_clone = badge_count.clone();
+    let hwnd_clone = hwnd;
 
     // Clone meeting state for IPC handler
     let meeting_state_ipc = meeting_state.clone();
@@ -150,6 +159,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                 if *current_count != count {
                     *current_count = count;
                     log::info!("Title changed: '{}' → {} unread", title, count);
+
+                    // Update taskbar badge
+                    update_taskbar_badge(hwnd_clone, count);
 
                     // Play sound for new messages
                     if count > 0 {

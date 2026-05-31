@@ -10,7 +10,7 @@ pub fn get_auto_read_script() -> String {
         // Configuration
         const CONFIG = {
             keywords: ['closed', 'cancel'],
-            checkInterval: 3000,      // Check every 3 seconds (was 5)
+            checkInterval: 300000,     // Check every 5 minutes (300000ms)
             debounceMs: 500,          // Debounce clicks
             maxClicksPerBatch: 5,     // Limit clicks per batch
             selectorTimeout: 2000     // Wait for elements to load
