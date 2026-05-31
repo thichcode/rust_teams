@@ -77,9 +77,51 @@ jobs:
         run: |
           # Copy exe with clean name
           Copy-Item target/release/rust_teams.exe rust_teams-windows-x64.exe
-          # Create zip for download
+          # Show file size
+          Get-Item rust_teams-windows-x64.exe | Select-Object Name, Length
+
+      - name: Sign executable
+        if: env.CODE_SIGNING_CERT_BASE64 != ''
+        shell: pwsh
+        env:
+          CODE_SIGNING_CERT_BASE64: ${{ secrets.CODE_SIGNING_CERT_BASE64 }}
+          CODE_SIGNING_CERT_PASSWORD: ${{ secrets.CODE_SIGNING_CERT_PASSWORD }}
+        run: |
+          # Decode certificate
+          $certBytes = [Convert]::FromBase64String($env:CODE_SIGNING_CERT_BASE64)
+          $certPath = "$env:RUNNER_TEMP\certificate.pfx"
+          [System.IO.File]::WriteAllBytes($certPath, $certBytes)
+          
+          # Sign with signtool
+          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | 
+            Select-Object -First 1 -ExpandProperty FullName
+          
+          if ($signtool) {
+            & $signtool sign `
+              /f $certPath `
+              /p $env:CODE_SIGNING_CERT_PASSWORD `
+              /tr http://timestamp.digicert.com `
+              /td sha256 `
+              /d "R Teams" `
+              /du "https://github.com/thichcode/rust_teams" `
+              rust_teams-windows-x64.exe
+            
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host "✅ Signed successfully" -ForegroundColor Green
+            } else {
+              Write-Warning "Signing failed, continuing with unsigned exe"
+            }
+          } else {
+            Write-Warning "signtool not found, skipping signing"
+          }
+          
+          # Clean up certificate
+          Remove-Item $certPath -Force -ErrorAction SilentlyContinue
+
+      - name: Create zip
+        shell: pwsh
+        run: |
           Compress-Archive -Path rust_teams-windows-x64.exe -DestinationPath rust_teams-windows-x64.zip
-          # Show file sizes
           Get-Item *.exe, *.zip | Select-Object Name, Length
 
       - name: Upload exe artifact
