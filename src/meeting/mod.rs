@@ -1,6 +1,8 @@
 //! Meeting notes module
 //! Auto-generate meeting notes from Teams audio
 
+#![allow(unused_imports)]
+
 pub mod audio;
 pub mod config;
 pub mod detect;

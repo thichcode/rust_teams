@@ -122,7 +122,7 @@ impl AudioCapture {
 
     /// Start an input stream on a device
     fn start_input_stream(&self, device: &Device) -> Result<Stream> {
-        let supported_config = device
+        let _supported_config = device
             .supported_input_configs()
             .map_err(|e| anyhow::anyhow!("Failed to get configs: {}", e))?
             .find(|c| c.sample_format() == SampleFormat::F32)

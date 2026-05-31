@@ -161,7 +161,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                     log::info!("Meeting state changed: active={}, duration={}", active, duration);
 
-                    if let Ok(mut state) = meeting_state_ipc.lock() {
+                    if let Ok(state) = meeting_state_ipc.lock() {
                         if active && !state.is_meeting_active.load(Ordering::Relaxed) {
                             // Meeting started - start recording
                             state.is_meeting_active.store(true, Ordering::Relaxed);
