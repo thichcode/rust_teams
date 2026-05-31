@@ -1,6 +1,6 @@
 [package]
 name = "rust_teams"
-version = "0.4.2"
+version = "0.4.3"
 edition = "2024"  # Latest Rust edition (2024)
 
 [features]
