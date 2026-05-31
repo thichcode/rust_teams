@@ -132,16 +132,13 @@ jobs:
           REPO="${{ github.repository }}"
           BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
           
-          cat > /tmp/release_notes.md << 'EOF'
+          # Create release notes file
+          cat > /tmp/release_notes.md << EOFRN
           ## R Teams ${TAG}
-          
-          ---
           
           ### What's New
           
-          > Version ${VERSION} - Latest features and improvements
-          
-          ---
+          Version ${VERSION} - Latest features and improvements
           
           ### Download
           
@@ -170,11 +167,10 @@ jobs:
           
           ---
           
-          <sub>Built with Rust ${VERSION} | [Report Issues](https://github.com/${REPO}/issues)</sub>
-          EOF
+          *Built with Rust | [Report Issues](https://github.com/${REPO}/issues)*
+          EOFRN
           
-          # Process the heredoc with variable substitution
-          NOTES=$(cat /tmp/release_notes.md | sed "s/\${TAG}/${TAG}/g" | sed "s/\${VERSION}/${VERSION}/g" | sed "s|\${BASE_URL}|${BASE_URL}|g" | sed "s|\${REPO}|${REPO}|g")
+          NOTES=$(cat /tmp/release_notes.md)
           echo "notes=${NOTES}" >> $GITHUB_OUTPUT
 
       - name: Create tag
