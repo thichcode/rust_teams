@@ -329,6 +329,7 @@ pub fn current_version() -> &'static str {
 }
 
 /// Print update check result and auto-download if available
+#[allow(dead_code)]
 pub fn print_update_status() {
     match check_for_update() {
         Ok(Some(update)) => {

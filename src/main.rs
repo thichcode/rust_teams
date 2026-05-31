@@ -50,10 +50,33 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Print version
     println!("🦀 R Teams v{}", updater::current_version());
 
-    // Check for updates in background (non-blocking)
-    std::thread::spawn(|| {
-        updater::print_update_status();
-    });
+    // Check for updates synchronously (before hiding console)
+    println!("🔄 Checking for updates...");
+    match updater::check_for_update() {
+        Ok(Some(update)) => {
+            println!();
+            println!("╔══════════════════════════════════════════════════════════════╗");
+            println!("║  UPDATE AVAILABLE: v{} → v{}", updater::current_version(), update.version);
+            println!("╚══════════════════════════════════════════════════════════════╝");
+            println!();
+            println!("   Download URL: {}", update.download_url);
+            println!();
+            println!("   Auto-downloading update...");
+            
+            if let Err(e) = updater::download_and_install(&update) {
+                println!("❌ Update failed: {}", e);
+                println!("   Please download manually from:");
+                println!("   {}", update.download_url);
+            }
+        }
+        Ok(None) => {
+            println!("✅ Already on latest version (v{})", updater::current_version());
+        }
+        Err(e) => {
+            println!("⚠️  Could not check for updates: {}", e);
+        }
+    }
+    println!();
 
     // Load or create config
     let config_manager = ConfigManager::new();
@@ -221,10 +244,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     eprintln!("⚡ Performance: ENABLED (prefetch, lazy load, cache)");
     eprintln!("📝 Meeting Notes: ENABLED (auto-record + generate .md)");
     eprintln!();
-    eprintln!("💡 Console will hide in 5 seconds...");
+    eprintln!("💡 Console will hide in 10 seconds...");
 
-    // Auto-hide console after 5 seconds
-    auto_hide_console(5000);
+    // Auto-hide console after 10 seconds
+    auto_hide_console(10000);
 
     // Keep webview alive
     let _webview = webview;
