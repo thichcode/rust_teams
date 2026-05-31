@@ -132,32 +132,29 @@ jobs:
           REPO="${{ github.repository }}"
           BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
           
-          # Create release notes file
+          # Write notes to file
           cat > /tmp/release_notes.md << EOFRN
           ## R Teams ${TAG}
-          
-          ### What's New
           
           Version ${VERSION} - Latest features and improvements
           
           ### Download
           
-          | File | Size | Description |
-          |------|------|-------------|
-          | [rust_teams-windows-x64.exe](${BASE_URL}/rust_teams-windows-x64.exe) | ~5MB | Standalone executable |
-          | [rust_teams-windows-x64.zip](${BASE_URL}/rust_teams-windows-x64.zip) | ~2MB | Compressed archive |
+          [rust_teams-windows-x64.exe](${BASE_URL}/rust_teams-windows-x64.exe) - Standalone executable (~5MB)
+          
+          [rust_teams-windows-x64.zip](${BASE_URL}/rust_teams-windows-x64.zip) - Compressed archive (~2MB)
           
           ### Features
           
-          - **WebView2 Engine** - Lightweight Microsoft Teams client
-          - **Memory Optimized** - ~80MB RAM usage (vs 400MB+ Electron)
-          - **Auto-Update** - Seamless updates via GitHub Releases
-          - **Multi-Profile** - Switch between Teams accounts
-          - **Badge Notifications** - Unread message counter
-          - **Auto-Read** - Mark messages with keywords as read
-          - **Smart Links** - Open in running browser
-          - **Performance** - Prefetch, lazy load, caching
-          - **Meeting Notes** - Auto-detect and generate notes
+          - WebView2 Engine - Lightweight Microsoft Teams client
+          - Memory Optimized - ~80MB RAM usage
+          - Auto-Update - Seamless updates via GitHub Releases
+          - Multi-Profile - Switch between Teams accounts
+          - Badge Notifications - Unread message counter
+          - Auto-Read - Mark messages with keywords as read
+          - Smart Links - Open in running browser
+          - Performance - Prefetch, lazy load, caching
+          - Meeting Notes - Auto-detect and generate notes
           
           ### System Requirements
           
@@ -165,13 +162,15 @@ jobs:
           - WebView2 Runtime (pre-installed on Windows 11)
           - ~10MB disk space
           
-          ---
-          
-          *Built with Rust | [Report Issues](https://github.com/${REPO}/issues)*
+          Built with Rust | Report Issues: https://github.com/${REPO}/issues
           EOFRN
           
           NOTES=$(cat /tmp/release_notes.md)
-          echo "notes=${NOTES}" >> $GITHUB_OUTPUT
+          {
+            echo "notes<<EOF"
+            echo "$NOTES"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
 
       - name: Create tag
         run: |
