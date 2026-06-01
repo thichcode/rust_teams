@@ -137,11 +137,6 @@ pub fn get_performance_script() -> String {
     .to_string()
 }
 
-/// Empty - hover prefetch removed to prevent click hijack in dialogs
-pub fn get_chat_speedup_script() -> String {
-    String::new()
-}
-
 /// Get combined performance scripts (preconnect + GC hint + visibility-pause + idle callback)
 pub fn get_all_optimization_scripts() -> String {
     get_performance_script()
