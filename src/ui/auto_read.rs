@@ -35,6 +35,28 @@ pub fn get_auto_read_script() -> String {
             return previewText.trim();
         }
         
+        function isInsideDialog(element) {
+            // Skip if element is inside any modal/dialog/popup/flyout
+            return element.closest(
+                '[role="dialog"],' +
+                '[role="alertdialog"],' +
+                '[role="menu"],' +
+                '[role="listbox"],' +
+                '[aria-modal="true"],' +
+                '[data-tid*="dialog" i],' +
+                '[data-tid*="popup" i],' +
+                '[data-tid*="flyout" i],' +
+                '[data-tid*="modal" i],' +
+                '[data-tid*="call-stage" i],' +
+                '[data-tid*="meeting" i],' +
+                '[class*="dialog" i],' +
+                '[class*="modal" i],' +
+                '[class*="popup" i],' +
+                '[class*="call-stage" i],' +
+                '[class*="meeting-stage" i]'
+            ) !== null;
+        }
+
         function autoRead() {
             if (state.isRunning) return;
             const now = Date.now();
@@ -54,6 +76,9 @@ pub fn get_auto_read_script() -> String {
                 for (const preview of previews) {
                     if (clicked >= CONFIG.maxClicksPerBatch) break;
                     
+                    // Skip if inside any dialog/modal/meeting stage
+                    if (isInsideDialog(preview)) continue;
+                    
                     const rawText = preview.textContent || '';
                     const message = getMessageOnly(rawText);
                     if (!hasKeyword(message)) continue;
@@ -63,6 +88,7 @@ pub fn get_auto_read_script() -> String {
                         '[data-tid*="chat-item"]'
                     );
                     if (!option) continue;
+                    if (isInsideDialog(option)) continue;
                     if (state.clickedChats.has(option)) continue;
                     
                     const unread = option.querySelector(

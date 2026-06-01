@@ -173,6 +173,22 @@ fn main() -> Result<(), Box<dyn Error>> {
         .with_new_window_req_handler(|url: String, _features: NewWindowFeatures| {
             log::info!("Intercepted navigation: {}", url);
 
+            let lower = url.to_lowercase();
+
+            // Meet/call join URLs — open in system browser because WebView2
+            // is single-window and cannot create popup windows for the call stage
+            if lower.contains("/meet/")
+                || lower.contains("/call/")
+                || lower.contains("meetup-join")
+                || lower.contains("teams.live.com/meet")
+            {
+                log::info!("Routing meet/call URL to system browser: {}", url);
+                if let Err(e) = open_url_smart(&url) {
+                    log::warn!("Failed to open meet URL: {}", e);
+                }
+                return NewWindowResponse::Deny;
+            }
+
             // Check if it's a Teams/Microsoft URL
             if url.contains("teams.microsoft.com") || url.contains("microsoft.com") {
                 // Allow Teams URLs - open in same window
