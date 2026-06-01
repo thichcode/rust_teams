@@ -26,6 +26,7 @@ use meeting::{MeetingNotesGenerator, MeetingNotesConfig, RealtimePayload, Realti
 use ui::auto_read::get_auto_read_script;
 use ui::badge::{parse_unread_count, play_notification_sound, update_taskbar_badge};
 use ui::browser::open_url_smart;
+use ui::browser::open_in_new_window;
 use ui::console::auto_hide_console;
 use ui::meeting_detect::get_meeting_detection_script;
 use ui::performance::get_all_optimization_scripts;
@@ -249,8 +250,30 @@ fn main() -> Result<(), Box<dyn Error>> {
 
             let lower = url.to_lowercase();
 
-            // Meet/call join URLs — open in system browser because WebView2
-            // is single-window and cannot create popup windows for the call stage
+            // ---- Teams pop-out detection (chat / profile / channel) ----
+            // WebView2 is single-window, so any Teams internal popup
+            // (1:1 chat, group chat, profile, channel) must be opened
+            // in a separate Edge window. Otherwise `NewWindowResponse::Allow`
+            // would just defer to default browser (often no-op for R Teams).
+            let is_teams_internal = lower.contains("teams.microsoft.com")
+                || lower.contains("teams.live.com");
+            let is_popout = lower.contains("/l/chat/")
+                || lower.contains("/l/person/")
+                || lower.contains("/l/channel/")
+                || lower.contains("users=");
+
+            if is_teams_internal && is_popout {
+                log::info!("Routing Teams pop-out to new Edge window: {}", url);
+                if let Err(e) = open_in_new_window(&url) {
+                    log::warn!("Failed to open in new window, fallback: {}", e);
+                    let _ = open_url_smart(&url);
+                }
+                return NewWindowResponse::Deny;
+            }
+
+            // ---- Meet/call join URLs ----
+            // Open in system browser because WebView2 is single-window
+            // and cannot create popup windows for the call stage.
             if lower.contains("/meet/")
                 || lower.contains("/call/")
                 || lower.contains("meetup-join")
@@ -263,16 +286,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                 return NewWindowResponse::Deny;
             }
 
-            // Check if it's a Teams/Microsoft URL
-            if url.contains("teams.microsoft.com") || url.contains("microsoft.com") {
+            // ---- Teams/Microsoft URLs (non-popout) ----
+            if is_teams_internal {
                 // Allow Teams URLs - open in same window
                 NewWindowResponse::Allow
             } else {
-                // External URL - try to open in running browser
+                // ---- External URL ----
                 if let Err(e) = open_url_smart(&url) {
                     log::warn!("Failed to open URL: {}", e);
                 }
-                // Deny opening in WebView
                 NewWindowResponse::Deny
             }
         })
