@@ -24,6 +24,10 @@ pub fn create_stt_provider(config: &SttConfig) -> Box<dyn SttProvider> {
             &config.api_key,
             &config.model,
         )),
+        "local" | "whisper-cpp" | "whisper.cpp" => Box::new(LocalWhisper::new(
+            &config.api_url,
+            &config.api_key,
+        )),
         _ => {
             log::warn!("Unknown STT provider '{}', falling back to OpenAI", config.provider_type);
             Box::new(OpenAiWhisper::new(
@@ -96,25 +100,63 @@ impl SttProvider for OpenAiWhisper {
     }
 }
 
-/// Local Whisper provider (placeholder for future implementation)
+/// Local Whisper provider using whisper.cpp CLI as subprocess.
+///
+/// The user must download a whisper.cpp release binary + a model file.
+///   - Config `api_url` → path to `main.exe` (e.g. `C:\\whisper\\main.exe`)
+///   - Config `api_key` → path to ggml model (e.g. `C:\\whisper\\models\\ggml-base.en.bin`)
 pub struct LocalWhisper {
-    #[allow(dead_code)]
+    whisper_bin: String,
     model_path: String,
 }
 
 impl LocalWhisper {
-    #[allow(dead_code)]
-    pub fn new(model_path: &str) -> Self {
+    pub fn new(whisper_bin: &str, model_path: &str) -> Self {
         Self {
+            whisper_bin: whisper_bin.to_string(),
             model_path: model_path.to_string(),
         }
     }
 }
 
 #[async_trait]
-#[allow(dead_code)]
 impl SttProvider for LocalWhisper {
-    async fn transcribe(&self, _audio: &[f32], _language: &str) -> Result<String> {
-        anyhow::bail!("Local Whisper not yet implemented. Use OpenAI provider.")
+    async fn transcribe(&self, audio: &[f32], language: &str) -> Result<String> {
+        let wav = super::audio::AudioCapture::to_wav(audio, 16000, 1)?;
+        let tmp_dir = std::env::temp_dir();
+        let tmp_wav = tmp_dir.join(format!("whisper_{}.wav", uuid::Uuid::new_v4()));
+        let tmp_out = tmp_wav.with_extension("txt");
+        std::fs::write(&tmp_wav, &wav)?;
+
+        // Build command: main.exe -m <model> -f <input.wav> -otxt -l <lang>
+        let lang_flag = if language.is_empty() { "auto" } else { language };
+        let output = tokio::process::Command::new(&self.whisper_bin)
+            .arg("-m")
+            .arg(&self.model_path)
+            .arg("-f")
+            .arg(tmp_wav.as_os_str())
+            .arg("-otxt")
+            .arg("-l")
+            .arg(lang_flag)
+            .arg("--no-prints")
+            .output()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to run whisper: {}", e))?;
+
+        // Cleanup temp wav
+        let _ = std::fs::remove_file(&tmp_wav);
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("whisper exited with {}: {}", output.status, stderr);
+        }
+
+        // Read output txt file
+        let text = tokio::fs::read_to_string(&tmp_out)
+            .await
+            .unwrap_or_else(|_| String::from_utf8_lossy(&output.stdout).to_string());
+        let _ = std::fs::remove_file(&tmp_out);
+
+        Ok(text.trim().to_string())
     }
 }
