@@ -1,13 +1,14 @@
 //! Realtime translate pipeline
 //! Captures audio chunks from system loopback during a call, transcribes
 //! via STT, translates to target language, and generates suggested replies.
+//! All async work runs via block_on on a per-thread tokio runtime.
 
 #![allow(dead_code)]
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -56,15 +57,8 @@ impl RealtimeTranslatePipeline {
         }
     }
 
-    /// Get runtime flag (clone of the Arc)
-    pub fn running_flag(&self) -> Arc<AtomicBool> {
-        self.is_running.clone()
-    }
-
-    /// Start the pipeline. Spawns a tokio task that:
-    ///   1. Starts mic + loopback capture
-    ///   2. Every chunk_duration_secs, drains the buffer, calls STT,
-    ///      then translate + suggest, then sends the result through `sender`.
+    /// Create a single-threaded tokio runtime inside the audio thread and
+    /// drive the entire pipeline synchronously via block_on.
     pub fn start(&self) -> Result<()> {
         if self.is_running.load(Ordering::Relaxed) {
             return Ok(());
@@ -76,12 +70,6 @@ impl RealtimeTranslatePipeline {
         let context = self.rolling_context.clone();
         let tx = self.sender.clone();
 
-        // Audio handle runs on its own thread because cpal::Stream is !Send.
-        // The AudioCapture (and the cpal::Stream inside it) is constructed
-        // INSIDE the spawned thread so it never crosses thread boundaries.
-        let (chunk_tx, mut chunk_rx) =
-            mpsc::unbounded_channel::<Vec<f32>>();
-
         let chunk_secs = cfg.chunk_duration_secs.max(2);
         let audio_cfg = cfg.stt.clone().into_audio_config();
         let sample_rate = audio_cfg.sample_rate as usize;
@@ -89,6 +77,8 @@ impl RealtimeTranslatePipeline {
         let running_audio = running.clone();
 
         std::thread::spawn(move || {
+            log::info!("[Realtime] Audio thread started");
+
             let mut audio = match AudioCapture::new(audio_cfg) {
                 Ok(a) => a,
                 Err(e) => {
@@ -101,6 +91,26 @@ impl RealtimeTranslatePipeline {
                 return;
             }
 
+            // Build async providers once (reqwest Client etc.)
+            let stt_cfg = SttConfig {
+                provider_type: cfg.stt.provider_type.clone(),
+                api_url: cfg.stt.api_url.clone(),
+                api_key: cfg.stt.api_key.clone(),
+                model: cfg.stt.model.clone(),
+            };
+            let stt_provider: Box<dyn SttProvider> = stt::create_stt_provider(&stt_cfg);
+            let translator = super::translator::create_translator(&cfg.translator);
+            let suggester = super::suggester::create_suggester(&cfg.suggester);
+
+            // Tokio runtime for the async HTTP calls inside this thread
+            let rt = match tokio::runtime::Runtime::new() {
+                Ok(r) => r,
+                Err(e) => {
+                    log::error!("[Realtime] Failed to create tokio runtime: {}", e);
+                    return;
+                }
+            };
+
             let mut accumulated: Vec<f32> = Vec::with_capacity(samples_per_chunk * 2);
 
             while running_audio.load(Ordering::Relaxed) {
@@ -110,117 +120,82 @@ impl RealtimeTranslatePipeline {
                 if accumulated.len() >= samples_per_chunk {
                     let chunk: Vec<f32> =
                         accumulated.drain(..samples_per_chunk).collect();
-                    if chunk_tx.send(chunk).is_err() {
-                        break;
-                    }
+
+                    // Run the async pipeline synchronously via block_on
+                    rt.block_on(async {
+                        let source_text = match stt_provider
+                            .transcribe(&chunk, &cfg.source_lang)
+                            .await
+                        {
+                            Ok(t) => t,
+                            Err(e) => {
+                                log::warn!("[Realtime] STT error: {}", e);
+                                return;
+                            }
+                        };
+
+                        let source_text = source_text.trim().to_string();
+                        if source_text.is_empty() {
+                            return;
+                        }
+
+                        let translated = match translator
+                            .translate(&source_text, &cfg.source_lang, &cfg.target_lang)
+                            .await
+                        {
+                            Ok(t) => t,
+                            Err(e) => {
+                                log::warn!("[Realtime] translate error: {}", e);
+                                source_text.clone()
+                            }
+                        };
+
+                        let ctx_snapshot = {
+                            let guard = context.lock().unwrap();
+                            guard.join("\n")
+                        };
+                        let suggestions = match suggester
+                            .suggest(
+                                &ctx_snapshot,
+                                &source_text,
+                                &cfg.target_lang,
+                                cfg.suggestion_count as usize,
+                            )
+                            .await
+                        {
+                            Ok(s) => s,
+                            Err(e) => {
+                                log::warn!("[Realtime] suggest error: {}", e);
+                                Vec::new()
+                            }
+                        };
+
+                        {
+                            let mut guard = context.lock().unwrap();
+                            guard.push(source_text.clone());
+                            if guard.len() > 10 {
+                                let drop_n = guard.len() - 10;
+                                guard.drain(0..drop_n);
+                            }
+                        }
+
+                        let payload = RealtimePayload {
+                            timestamp: now_millis(),
+                            source_text,
+                            source_lang: cfg.source_lang.clone(),
+                            translated_text: translated,
+                            target_lang: cfg.target_lang.clone(),
+                            suggestions,
+                        };
+                        let _ = tx.send(payload);
+                    });
                 } else {
                     std::thread::sleep(Duration::from_millis(200));
                 }
             }
 
-            // Stream is dropped here when `audio` goes out of scope
             let _ = audio.stop_recording();
-        });
-
-        // Async task: STT -> translate -> suggest
-        tokio::spawn(async move {
-            // Reuse the existing STT factory by projecting the realtime
-            // STT config into the legacy SttConfig shape.
-            let stt_cfg = SttConfig {
-                provider_type: cfg.stt.provider_type.clone(),
-                api_url: cfg.stt.api_url.clone(),
-                api_key: cfg.stt.api_key.clone(),
-                model: cfg.stt.model.clone(),
-            };
-            let stt_provider: Box<dyn SttProvider> = stt::create_stt_provider(&stt_cfg);
-            let translator = super::translator::create_translator(
-                &cfg.translator,
-            );
-            let suggester = super::suggester::create_suggester(
-                &cfg.suggester,
-            );
-
-            while let Some(chunk) = chunk_rx.recv().await {
-                if !running.load(Ordering::Relaxed) {
-                    break;
-                }
-
-                let cfg_ref = &cfg;
-                let ctx_ref = context.clone();
-
-                // 1) STT
-                let source_text = match stt_provider
-                    .transcribe(&chunk, &cfg_ref.source_lang)
-                    .await
-                {
-                    Ok(t) => t,
-                    Err(e) => {
-                        log::warn!("[Realtime] STT error: {}", e);
-                        continue;
-                    }
-                };
-
-                let source_text = source_text.trim().to_string();
-                if source_text.is_empty() {
-                    continue;
-                }
-
-                // 2) Translate
-                let translated = match translator
-                    .translate(&source_text, &cfg_ref.source_lang, &cfg_ref.target_lang)
-                    .await
-                {
-                    Ok(t) => t,
-                    Err(e) => {
-                        log::warn!("[Realtime] translate error: {}", e);
-                        source_text.clone()
-                    }
-                };
-
-                // 3) Suggest
-                let ctx_snapshot = {
-                    let guard = ctx_ref.lock().unwrap();
-                    guard.join("\n")
-                };
-                let suggestions = match suggester
-                    .suggest(
-                        &ctx_snapshot,
-                        &source_text,
-                        &cfg_ref.target_lang,
-                        cfg_ref.suggestion_count as usize,
-                    )
-                    .await
-                {
-                    Ok(s) => s,
-                    Err(e) => {
-                        log::warn!("[Realtime] suggest error: {}", e);
-                        Vec::new()
-                    }
-                };
-
-                // 4) Push into rolling context (cap to last 10 turns)
-                {
-                    let mut guard = ctx_ref.lock().unwrap();
-                    guard.push(source_text.clone());
-                    if guard.len() > 10 {
-                        let drop_n = guard.len() - 10;
-                        guard.drain(0..drop_n);
-                    }
-                }
-
-                // 5) Ship to UI
-                let payload = RealtimePayload {
-                    timestamp: now_millis(),
-                    source_text,
-                    source_lang: cfg_ref.source_lang.clone(),
-                    translated_text: translated,
-                    target_lang: cfg_ref.target_lang.clone(),
-                    suggestions,
-                };
-                if tx.send(payload).is_err() {
-                    break;
-                }
-            }
+            log::info!("[Realtime] Audio thread stopped");
         });
 
         Ok(())
@@ -240,7 +215,7 @@ fn now_millis() -> u64 {
         .unwrap_or(0)
 }
 
-/// Tiny trait used to map the realtime STT config to AudioCapture's config.
+/// Map realtime STT config to AudioCapture's config.
 trait IntoAudioConfig {
     fn into_audio_config(&self) -> super::config::AudioConfig;
 }
