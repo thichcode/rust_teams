@@ -5,6 +5,7 @@ mod app;
 mod config;
 mod error;
 mod meeting;
+mod memory;
 mod ui;
 mod updater;
 
@@ -63,6 +64,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Print version
     println!("🦀 R Teams v{}", updater::current_version());
 
+    // Parse CLI args (--memory-profile safe|balanced|aggressive|off)
+    let cli_args: Vec<String> = std::env::args().collect();
+    let cli_profile = memory::parse_cli_profile(&cli_args);
+    if let Some(p) = cli_profile {
+        eprintln!("💾 CLI memory profile override: {}", p.as_str());
+    }
+
     // Check for updates synchronously (before hiding console)
     println!("🔄 Checking for updates...");
     match updater::check_for_update() {
@@ -93,7 +101,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Load or create config
     let config_manager = ConfigManager::new();
-    let config = match config_manager.load() {
+    let mut config = match config_manager.load() {
         Ok(cfg) => {
             eprintln!("✅ Config loaded");
             cfg
@@ -103,6 +111,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             config_manager.default_config()
         }
     };
+
+    // Apply CLI memory profile override (nếu có)
+    if let Some(profile) = cli_profile {
+        profile.apply_to(&mut config.memory_optimization);
+    }
 
     // Determine Teams URL
     let teams_url = get_teams_url(&config);
@@ -199,8 +212,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     let perf_js = get_all_optimization_scripts();
     let meeting_js = get_meeting_detection_script();
     let realtime_panel_js = get_realtime_panel_script();
+
+    // Build Chromium / WebView2 browser flags từ memory config
+    let browser_args = memory::build_browser_args(&config.memory_optimization);
+    memory::log_summary(&config.memory_optimization);
+    if !browser_args.is_empty() {
+        log::info!("WebView2 args: {}", browser_args);
+    }
+
     let mut webview_builder = WebViewBuilder::new()
         .with_url(&teams_url)
+        .with_additional_browser_args(&browser_args)
         .with_initialization_script(&auto_read_js)
         .with_initialization_script(&perf_js)
         .with_initialization_script(&meeting_js)

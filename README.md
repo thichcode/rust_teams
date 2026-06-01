@@ -187,17 +187,22 @@ rust_teams/
 
 ## 🧠 Memory Optimization
 
-Rust Teams is designed to be lightweight:
+Rust Teams saves **~250MB RAM** vs default WebView2 via 3 profiles:
 
-| Optimization | RAM Savings |
-|---|---|
-| Cache limiting (10MB) | ~50-100 MB |
-| GPU disabled | ~30-50 MB |
-| Animations off | ~10-20 MB |
-| Context menus off | ~5-10 MB |
-| **Total** | **~95-180 MB** |
+| Profile | RAM Saved | CLI Flag | Trade-off |
+|---|---|---|---|
+| Safe | ~70MB | `--memory-profile safe` | None — keeps Spectre protection + cache |
+| **Balanced** (default) | ~250MB | `--memory-profile balanced` | Spectre mitigation OFF, BFCache OFF |
+| Aggressive | ~350MB | `--memory-profile aggressive` | Caps renderer at 2 + V8 heap at 512MB |
+| Off | 0 | `--memory-profile off` | WebView2 defaults |
 
-See [MEMORY_OPTIMIZED.md](MEMORY_OPTIMIZED.md) for detailed benchmarks.
+Also includes JS-level optimizations:
+- **Preconnect hints** for Teams CDN
+- **Visibility-pause** when tab is hidden
+- **Idle GC hint** after 30s inactivity
+- **Content-visibility** on off-screen chat lists
+
+See [docs/MEMORY.md](docs/MEMORY.md) for full reference.
 
 ---
 

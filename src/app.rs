@@ -37,6 +37,55 @@ pub struct MemoryOptimization {
     pub disable_gpu: bool,
     pub disable_animations: bool,
     pub idle_timeout_secs: u32,
+
+    // ---- Chromium / WebView2 flags (Balanced profile defaults) ----
+    /// Tắt background networking (ping, stats, safe-browsing telemetry)
+    #[serde(default = "default_true")]
+    pub disable_background_networking: bool,
+
+    /// Tắt crash reporter
+    #[serde(default = "default_true")]
+    pub disable_breakpad: bool,
+
+    /// Tắt Chrome sync
+    #[serde(default = "default_true")]
+    pub disable_sync: bool,
+
+    /// Tắt Chromium translate UI
+    #[serde(default = "default_true")]
+    pub disable_translate: bool,
+
+    /// Tắt extensions (Teams không cần)
+    #[serde(default = "default_true")]
+    pub disable_extensions: bool,
+
+    /// Tắt tự động update WebView2 component
+    #[serde(default = "default_true")]
+    pub disable_component_update: bool,
+
+    /// Tắt domain reliability telemetry
+    #[serde(default = "default_true")]
+    pub disable_domain_reliability: bool,
+
+    /// Tắt BackForwardCache (~30MB nhưng back/forward chậm hơn)
+    #[serde(default = "default_true")]
+    pub disable_back_forward_cache: bool,
+
+    /// Tắt site isolation (Spectre mitigation) — tiết kiệm 80-120MB
+    #[serde(default = "default_true")]
+    pub disable_site_isolation: bool,
+
+    /// Giới hạn số renderer process (0 = unlimited)
+    #[serde(default)]
+    pub renderer_process_limit: u32,
+
+    /// Giới hạn V8 heap MB (0 = unlimited)
+    #[serde(default)]
+    pub js_max_old_space_mb: u32,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for MemoryOptimization {
@@ -47,6 +96,17 @@ impl Default for MemoryOptimization {
             disable_gpu: true,
             disable_animations: true,
             idle_timeout_secs: 300,
+            disable_background_networking: true,
+            disable_breakpad: true,
+            disable_sync: true,
+            disable_translate: true,
+            disable_extensions: true,
+            disable_component_update: true,
+            disable_domain_reliability: true,
+            disable_back_forward_cache: true,
+            disable_site_isolation: true,
+            renderer_process_limit: 0,
+            js_max_old_space_mb: 0,
         }
     }
 }

@@ -189,14 +189,16 @@ jobs:
           ### Features
           
           - WebView2 Engine - Lightweight Microsoft Teams client
-          - Memory Optimized - ~80MB RAM usage
+          - **Memory Optimized** - Balanced profile saves ~250MB RAM vs default WebView2 (`--memory-profile safe|balanced|aggressive`)
           - Auto-Update - Seamless updates via GitHub Releases
           - Multi-Profile - Switch between Teams accounts
           - Badge Notifications - Unread message counter
           - Auto-Read - Mark messages with keywords as read
           - Smart Links - Open in running browser
-          - Performance - Prefetch, lazy load, caching
+          - Performance - Preconnect, idle GC hint, visibility-pause, content-visibility
           - Meeting Notes - Auto-detect and generate notes
+          - Realtime Translate - Live transcription + translation + reply suggestions during calls
+          - Local Whisper - Auto-downloads whisper.cpp binary + model on first run
           
           ### System Requirements
           
