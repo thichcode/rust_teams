@@ -1,5 +1,5 @@
 //! Rust Teams - Microsoft Teams Desktop Client
-//! Features: Auto-update, Memory Optimization, Badge Notifications, URL Interception, Meeting Notes
+//! Features: Auto-update, Memory Optimization, Badge Notifications, URL Interception, Meeting Notes, Realtime Translate
 
 mod app;
 mod config;
@@ -17,22 +17,30 @@ use tao::event_loop::{ControlFlow, EventLoop};
 use tao::window::{WindowBuilder, Icon};
 #[cfg(target_os = "windows")]
 use tao::platform::windows::WindowExtWindows;
-use wry::{WebViewBuilder, WebViewBuilderExtWindows, NewWindowResponse, NewWindowFeatures};
+use wry::{WebView, WebViewBuilder, WebViewBuilderExtWindows, NewWindowResponse, NewWindowFeatures};
 
 use app::AppConfig;
 use config::ConfigManager;
-use meeting::{MeetingNotesGenerator, MeetingNotesConfig};
+use meeting::{MeetingNotesGenerator, MeetingNotesConfig, RealtimePayload, RealtimeTranslatePipeline};
 use ui::auto_read::get_auto_read_script;
 use ui::badge::{parse_unread_count, play_notification_sound, update_taskbar_badge};
 use ui::browser::open_url_smart;
 use ui::console::auto_hide_console;
 use ui::meeting_detect::get_meeting_detection_script;
 use ui::performance::get_all_optimization_scripts;
+use ui::realtime_panel::get_realtime_panel_script;
 
 /// Shared state for meeting notes
 struct MeetingState {
     is_meeting_active: Arc<AtomicBool>,
     generator: Arc<Mutex<Option<MeetingNotesGenerator>>>,
+    /// Pipeline drives STT -> translate -> suggestions while a call is active
+    realtime_pipeline: Arc<Mutex<Option<RealtimeTranslatePipeline>>>,
+    /// Receiver for the pipeline's payload stream; drained from the event loop
+    realtime_rx: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<RealtimePayload>>>>,
+    /// Reference to the WebView (wrapped in Arc because WebView is not Clone)
+    /// so we can inject translated captions as JS
+    webview: Arc<Mutex<Option<Arc<WebView>>>>,
 }
 
 impl MeetingState {
@@ -42,6 +50,9 @@ impl MeetingState {
             generator: Arc::new(Mutex::new(
                 MeetingNotesGenerator::new(config).ok()
             )),
+            realtime_pipeline: Arc::new(Mutex::new(None)),
+            realtime_rx: Arc::new(Mutex::new(None)),
+            webview: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -143,16 +154,21 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Clone meeting state for IPC handler
     let meeting_state_ipc = meeting_state.clone();
+    // Realtime translate config is needed by the IPC handler when a call starts
+    let realtime_cfg_ipc: Arc<Mutex<Option<meeting::RealtimeTranslateConfig>>> =
+        Arc::new(Mutex::new(Some(config.realtime_translate.clone())));
 
     // Build WebView with memory optimization and title change handler
     let auto_read_js = get_auto_read_script();
     let perf_js = get_all_optimization_scripts();
     let meeting_js = get_meeting_detection_script();
+    let realtime_panel_js = get_realtime_panel_script();
     let mut webview_builder = WebViewBuilder::new()
         .with_url(&teams_url)
         .with_initialization_script(&auto_read_js)
         .with_initialization_script(&perf_js)
         .with_initialization_script(&meeting_js)
+        .with_initialization_script(&realtime_panel_js)
         .with_document_title_changed_handler(move |title: String| {
             if let Some(count) = parse_unread_count(&title) {
                 let mut current_count = badge_count_clone.lock().unwrap();
@@ -225,15 +241,50 @@ fn main() -> Result<(), Box<dyn Error>> {
                                     }
                                 }
                             }
+
+                            // Start realtime translate pipeline (only if enabled)
+                            if let Ok(rt_cfg_lock) = realtime_cfg_ipc.lock() {
+                                if let Some(cfg) = rt_cfg_lock.as_ref() {
+                                    if cfg.enabled {
+                                        let (tx, rx) =
+                                            tokio::sync::mpsc::unbounded_channel::<RealtimePayload>();
+                                        let pipeline = RealtimeTranslatePipeline::new(
+                                            cfg.clone(),
+                                            tx,
+                                        );
+                                        if let Err(e) = pipeline.start() {
+                                            log::error!("Failed to start realtime translate: {}", e);
+                                        } else {
+                                            if let Ok(mut slot) = state.realtime_pipeline.lock() {
+                                                *slot = Some(pipeline);
+                                            }
+                                            if let Ok(mut slot) = state.realtime_rx.lock() {
+                                                *slot = Some(rx);
+                                            }
+                                            log::info!(
+                                                "Realtime translate started: {} -> {}",
+                                                cfg.source_lang, cfg.target_lang
+                                            );
+                                        }
+                                    }
+                                }
+                            }
                         } else if !active && state.is_meeting_active.load(Ordering::Relaxed) {
                             // Meeting ended - log it
                             state.is_meeting_active.store(false, Ordering::Relaxed);
                             log::info!("Meeting ended");
                             eprintln!("📝 Meeting ended - generating notes...");
 
-                            // Note: Full async meeting notes generation requires
-                            // resolving cpal::Stream Send issues
-                            // For now, we log the event
+                            // Stop realtime translate pipeline
+                            if let Ok(mut slot) = state.realtime_pipeline.lock() {
+                                if let Some(p) = slot.as_ref() {
+                                    p.stop();
+                                }
+                                *slot = None;
+                            }
+                            if let Ok(mut slot) = state.realtime_rx.lock() {
+                                *slot = None;
+                            }
                         }
                     }
                 }
@@ -249,6 +300,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     let webview = webview_builder
         .build(&window)
         .map_err(|e| -> Box<dyn Error> { format!("Failed to create WebView: {}", e).into() })?;
+
+    // Save the WebView into meeting state so the event loop can drive
+    // `evaluate_script` calls (used to push realtime captions into the UI).
+    // We share the WebView through an Arc<WebView>; wry's WebView is not Clone
+    // but the inner state is ref-counted (COM on Windows), so wrapping in Arc
+    // is safe and lets us hand a handle to multiple consumers.
+    let webview_handle = Arc::new(webview);
+    if let Ok(state) = meeting_state.lock() {
+        if let Ok(mut slot) = state.webview.lock() {
+            *slot = Some(webview_handle.clone());
+        }
+    }
 
     // Check version
     let current_version = updater::current_version();
@@ -271,14 +334,25 @@ fn main() -> Result<(), Box<dyn Error>> {
     eprintln!("📖 Auto-read: ENABLED (keywords: closed, cancel)");
     eprintln!("⚡ Performance: ENABLED (prefetch, lazy load, cache)");
     eprintln!("📝 Meeting Notes: ENABLED (auto-record + generate .md)");
+    eprintln!(
+        "🌐 Realtime translate: {} ({} -> {})",
+        if config.realtime_translate.enabled { "ENABLED" } else { "disabled" },
+        config.realtime_translate.source_lang,
+        config.realtime_translate.target_lang
+    );
     eprintln!();
     eprintln!("💡 Console will hide in 10 seconds...");
 
     // Auto-hide console after 10 seconds
     auto_hide_console(10000);
 
-    // Keep webview alive
-    let _webview = webview;
+    // Keep webview alive for the lifetime of the event loop.
+    // (webview_handle is already stored in meeting state; this just keeps
+    // one strong reference alive on the main stack.)
+    let _webview_keepalive = webview_handle;
+
+    // Event-loop-side handle for draining realtime translate payloads
+    let meeting_state_evt = meeting_state.clone();
 
     // Run event loop
     event_loop.run(move |event, _, control_flow| {
@@ -302,6 +376,31 @@ fn main() -> Result<(), Box<dyn Error>> {
                 *control_flow = ControlFlow::Exit;
             }
             _ => {}
+        }
+
+        // Drain any pending realtime translate payloads and push them into
+        // the WebView as a JS-side event.
+        if let Ok(state) = meeting_state_evt.lock() {
+            if let Ok(mut rx_slot) = state.realtime_rx.lock() {
+                if let Some(rx) = rx_slot.as_mut() {
+                    while let Ok(payload) = rx.try_recv() {
+                        if let Ok(wv_slot) = state.webview.lock() {
+                            if let Some(wv) = wv_slot.as_ref() {
+                                if let Ok(json) = serde_json::to_string(&payload) {
+                                    let escaped = json.replace('\\', "\\\\").replace('\'', "\\'");
+                                    let js = format!(
+                                        "window.dispatchEvent(new CustomEvent('rteams-realtime', {{ detail: JSON.parse('{}') }}));",
+                                        escaped
+                                    );
+                                    if let Err(e) = wv.evaluate_script(&js) {
+                                        log::warn!("Failed to inject realtime payload: {}", e);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     });
 }

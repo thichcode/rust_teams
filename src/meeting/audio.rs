@@ -101,6 +101,16 @@ impl AudioCapture {
         self.buffer.lock().map(|b| b.len()).unwrap_or(0)
     }
 
+    /// Drain and return all currently buffered samples.
+    /// Used by realtime translate pipeline to slice audio into chunks.
+    pub fn drain_buffer(&mut self) -> Vec<f32> {
+        if let Ok(mut buf) = self.buffer.lock() {
+            std::mem::take(&mut *buf)
+        } else {
+            Vec::new()
+        }
+    }
+
     /// Get loopback device for system audio capture (Windows)
     fn get_loopback_device(&self, host: &cpal::Host) -> Option<Device> {
         // On Windows, look for loopback device

@@ -6,6 +6,7 @@ pub mod browser;
 pub mod console;
 pub mod meeting_detect;
 pub mod performance;
+pub mod realtime_panel;
 pub mod window_manager;
 
 use serde::{Deserialize, Serialize};

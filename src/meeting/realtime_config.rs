@@ -1,0 +1,165 @@
+//! Realtime translate configuration
+//! Captures audio from Teams call, transcribes, translates, and suggests replies
+
+#![allow(dead_code)]
+
+use serde::{Deserialize, Serialize};
+
+/// Realtime translate config
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RealtimeTranslateConfig {
+    /// Enable realtime translate feature
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+
+    /// Auto-start when call detected
+    #[serde(default = "default_auto_start")]
+    pub auto_start: bool,
+
+    /// Source language code (e.g. "en")
+    #[serde(default = "default_source_lang")]
+    pub source_lang: String,
+
+    /// Target language code (e.g. "vi")
+    #[serde(default = "default_target_lang")]
+    pub target_lang: String,
+
+    /// Audio chunk duration in seconds
+    #[serde(default = "default_chunk_secs")]
+    pub chunk_duration_secs: u32,
+
+    /// Show suggestion panel
+    #[serde(default = "default_true")]
+    pub show_suggestions: bool,
+
+    /// Number of suggestions to show
+    #[serde(default = "default_suggestion_count")]
+    pub suggestion_count: u32,
+
+    /// STT provider
+    pub stt: SttRealtimeConfig,
+
+    /// Translation provider
+    pub translator: TranslateConfig,
+
+    /// Suggestion LLM provider
+    pub suggester: SuggestionConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SttRealtimeConfig {
+    #[serde(default = "default_stt_type")]
+    pub provider_type: String,
+    #[serde(default = "default_stt_api_url")]
+    pub api_url: String,
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default = "default_stt_model")]
+    pub model: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranslateConfig {
+    /// "openai", "google", "deepl", "ollama"
+    #[serde(default = "default_translator_type")]
+    pub provider_type: String,
+    #[serde(default = "default_translator_api_url")]
+    pub api_url: String,
+    #[serde(default)]
+    pub api_key: String,
+    /// For Google: project id; DeepL: not needed
+    #[serde(default)]
+    pub extra: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SuggestionConfig {
+    #[serde(default = "default_suggester_type")]
+    pub provider_type: String,
+    #[serde(default = "default_suggester_api_url")]
+    pub api_url: String,
+    #[serde(default)]
+    pub api_key: String,
+    #[serde(default = "default_suggester_model")]
+    pub model: String,
+    /// System prompt to bias suggestions (e.g. business context)
+    #[serde(default = "default_suggester_system_prompt")]
+    pub system_prompt: String,
+}
+
+fn default_enabled() -> bool { true }
+fn default_auto_start() -> bool { true }
+fn default_source_lang() -> String { "en".to_string() }
+fn default_target_lang() -> String { "vi".to_string() }
+fn default_chunk_secs() -> u32 { 5 }
+fn default_true() -> bool { true }
+fn default_suggestion_count() -> u32 { 3 }
+
+fn default_stt_type() -> String { "openai".to_string() }
+fn default_stt_api_url() -> String { "https://api.openai.com/v1".to_string() }
+fn default_stt_model() -> String { "whisper-1".to_string() }
+
+fn default_translator_type() -> String { "openai".to_string() }
+fn default_translator_api_url() -> String { "https://api.openai.com/v1".to_string() }
+
+fn default_suggester_type() -> String { "openai".to_string() }
+fn default_suggester_api_url() -> String { "https://api.openai.com/v1".to_string() }
+fn default_suggester_model() -> String { "gpt-4o-mini".to_string() }
+fn default_suggester_system_prompt() -> String {
+    "You are a helpful assistant in a business meeting. \
+     Based on the conversation context, suggest {n} short, natural replies the user can say next. \
+     Replies should be in {lang}, be polite and professional, and match the conversational tone. \
+     Format as a JSON array of strings."
+        .to_string()
+}
+
+impl Default for RealtimeTranslateConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_enabled(),
+            auto_start: default_auto_start(),
+            source_lang: default_source_lang(),
+            target_lang: default_target_lang(),
+            chunk_duration_secs: default_chunk_secs(),
+            show_suggestions: default_true(),
+            suggestion_count: default_suggestion_count(),
+            stt: SttRealtimeConfig::default(),
+            translator: TranslateConfig::default(),
+            suggester: SuggestionConfig::default(),
+        }
+    }
+}
+
+impl Default for SttRealtimeConfig {
+    fn default() -> Self {
+        Self {
+            provider_type: default_stt_type(),
+            api_url: default_stt_api_url(),
+            api_key: String::new(),
+            model: default_stt_model(),
+        }
+    }
+}
+
+impl Default for TranslateConfig {
+    fn default() -> Self {
+        Self {
+            provider_type: default_translator_type(),
+            api_url: default_translator_api_url(),
+            api_key: String::new(),
+            extra: String::new(),
+        }
+    }
+}
+
+impl Default for SuggestionConfig {
+    fn default() -> Self {
+        Self {
+            provider_type: default_suggester_type(),
+            api_url: default_suggester_api_url(),
+            api_key: String::new(),
+            model: default_suggester_model(),
+            system_prompt: default_suggester_system_prompt(),
+        }
+    }
+}
