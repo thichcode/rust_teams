@@ -54,6 +54,9 @@ tokio = { version = "1", features = ["full"] }
 # Meeting notes - Async trait
 async-trait = "0.1"
 
+# Whisper download - zip extraction
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
 # Windows-specific dependencies
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["winuser", "shellapi", "winbase", "processthreadsapi", "wincon"] }

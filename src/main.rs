@@ -158,6 +158,42 @@ fn main() -> Result<(), Box<dyn Error>> {
     let realtime_cfg_ipc: Arc<Mutex<Option<meeting::RealtimeTranslateConfig>>> =
         Arc::new(Mutex::new(Some(config.realtime_translate.clone())));
 
+    // Auto-download whisper.cpp + model if local STT is configured
+    #[cfg(target_os = "windows")]
+    {
+        let stt_type = config.realtime_translate.stt.provider_type.as_str();
+        if stt_type == "local" || stt_type == "whisper-cpp" || stt_type == "whisper.cpp" {
+            let data_dir = directories::ProjectDirs::from("com", "rust-teams", "app")
+                .map(|p| p.data_dir().to_path_buf())
+                .unwrap_or_else(|| std::env::temp_dir().join("rust-teams"));
+            let dl = meeting::whisper_download::WhisperDownloader::new(data_dir);
+
+            if dl.needs_download() {
+                eprintln!("📥 Downloading whisper.cpp + model (~100MB)…");
+                match dl.ensure_downloaded() {
+                    Ok(()) => eprintln!("✅ Whisper download complete"),
+                    Err(e) => eprintln!("⚠️  Whisper download failed: {}", e),
+                }
+            } else {
+                eprintln!("✅ Whisper files already present");
+            }
+
+            // Update realtime_cfg_ipc with downloaded paths
+            if dl.bin_path().exists() && dl.model_path().exists() {
+                if let Ok(mut locked) = realtime_cfg_ipc.lock() {
+                    if let Some(ref mut rt) = *locked {
+                        if rt.stt.api_url.is_empty() {
+                            rt.stt.api_url = dl.bin_path().to_string_lossy().to_string();
+                        }
+                        if rt.stt.api_key.is_empty() {
+                            rt.stt.api_key = dl.model_path().to_string_lossy().to_string();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Build WebView with memory optimization and title change handler
     let auto_read_js = get_auto_read_script();
     let perf_js = get_all_optimization_scripts();

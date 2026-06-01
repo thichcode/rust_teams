@@ -19,6 +19,7 @@ pub mod realtime_config;
 pub mod stt;
 pub mod suggester;
 pub mod translator;
+pub mod whisper_download;
 
 pub use config::MeetingNotesConfig;
 pub use notes::{MeetingNotes, MeetingNotesGenerator};
