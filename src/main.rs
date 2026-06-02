@@ -372,7 +372,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                         // Pre-flight: check API key
                                         if let Err(err) = check_realtime_prereq(cfg) {
                                             log::error!("[Realtime] Pre-flight failed: {}", err);
-                                            if let Ok(mut slot) = state.panel_state_tx.lock() {
+                                            if let Ok(slot) = state.panel_state_tx.lock() {
                                                 if let Some(tx) = slot.as_ref() {
                                                     let _ = tx.send(PanelState {
                                                         state: "no_api_key".into(),
@@ -396,7 +396,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                                     if let Ok(mut slot) = state.realtime_rx.lock() {
                                                         *slot = Some(rx);
                                                     }
-                                                    if let Ok(mut slot) = state.panel_state_tx.lock() {
+                                                    if let Ok(slot) = state.panel_state_tx.lock() {
                                                         if let Some(tx) = slot.as_ref() {
                                                             let _ = tx.send(PanelState {
                                                                 state: "listening".into(),
@@ -415,7 +415,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                                 }
                                                 Err(e) => {
                                                     log::error!("Failed to start pipeline: {}", e);
-                                                    if let Ok(mut slot) = state.panel_state_tx.lock() {
+                                                    if let Ok(slot) = state.panel_state_tx.lock() {
                                                         if let Some(tx) = slot.as_ref() {
                                                             let _ = tx.send(PanelState {
                                                                 state: "error".into(),
@@ -446,7 +446,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                             if let Ok(mut slot) = state.realtime_rx.lock() {
                                 *slot = None;
                             }
-                            if let Ok(mut slot) = state.panel_state_tx.lock() {
+                            if let Ok(slot) = state.panel_state_tx.lock() {
                                 if let Some(tx) = slot.as_ref() {
                                     let _ = tx.send(PanelState {
                                         state: "stopped".into(),
@@ -467,7 +467,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 if let Some(cfg) = rt_cfg_lock.as_ref() {
                                     if let Err(err) = check_realtime_prereq(cfg) {
                                         log::error!("[Realtime] Pre-flight failed: {}", err);
-                                        if let Ok(mut slot) = state.panel_state_tx.lock() {
+                                        if let Ok(slot) = state.panel_state_tx.lock() {
                                             if let Some(tx) = slot.as_ref() {
                                                 let _ = tx.send(PanelState {
                                                     state: "no_api_key".into(),
@@ -492,7 +492,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                                     *slot = Some(rx);
                                                 }
                                                 state.is_meeting_active.store(true, Ordering::Relaxed);
-                                                if let Ok(mut slot) = state.panel_state_tx.lock() {
+                                                if let Ok(slot) = state.panel_state_tx.lock() {
                                                     if let Some(tx) = slot.as_ref() {
                                                         let _ = tx.send(PanelState {
                                                             state: "listening".into(),
@@ -507,7 +507,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                             }
                                             Err(e) => {
                                                 log::error!("Manual start failed: {}", e);
-                                                if let Ok(mut slot) = state.panel_state_tx.lock() {
+                                                if let Ok(slot) = state.panel_state_tx.lock() {
                                                     if let Some(tx) = slot.as_ref() {
                                                         let _ = tx.send(PanelState {
                                                             state: "no_mic".into(),
@@ -533,7 +533,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                             if let Ok(mut slot) = state.realtime_rx.lock() {
                                 *slot = None;
                             }
-                            if let Ok(mut slot) = state.panel_state_tx.lock() {
+                            if let Ok(slot) = state.panel_state_tx.lock() {
                                 if let Some(tx) = slot.as_ref() {
                                     let _ = tx.send(PanelState {
                                         state: "stopped".into(),
