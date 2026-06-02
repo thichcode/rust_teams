@@ -165,6 +165,9 @@ pub fn get_realtime_panel_script() -> String {
         function ensurePanel() {
             let panel = document.getElementById(PANEL_ID);
             if (panel) return panel;
+            if (!document.body) {
+                throw new Error('document.body not ready');
+            }
             injectStyles();
             panel = document.createElement('div');
             panel.id = PANEL_ID;
@@ -366,22 +369,60 @@ pub fn get_realtime_panel_script() -> String {
         }
 
         window.addEventListener('rteams-realtime', (e) => {
-            const panel = ensurePanel();
-            renderPayload(panel, e.detail);
+            try {
+                const panel = ensurePanel();
+                renderPayload(panel, e.detail);
+            } catch (err) {
+                console.error('[RealtimePanel] payload error:', err);
+            }
         });
 
         window.addEventListener('rteams-panel-state', (e) => {
-            const panel = ensurePanel();
-            const d = e.detail || {};
-            renderState(panel, d.state, d.message, d.detail);
+            try {
+                const panel = ensurePanel();
+                const d = e.detail || {};
+                renderState(panel, d.state, d.message, d.detail);
+            } catch (err) {
+                console.error('[RealtimePanel] state error:', err);
+            }
         });
 
-        // Make panel visible from the start so users know it exists
-        const initPanel = ensurePanel();
-        initPanel.classList.add('visible');
-        renderState(initPanel, 'idle', 'Realtime translate ready. Join a Teams call to start.', null);
+        // ---- Auto-show on app start ----
+        // Initialization scripts run BEFORE document.body exists in many cases.
+        // We must wait until the body is ready, otherwise appendChild throws
+        // and the whole IIFE dies silently, leaving the user with no panel.
+        function initPanelWhenReady() {
+            try {
+                if (!document.body) {
+                    // Body not ready yet - retry shortly
+                    setTimeout(initPanelWhenReady, 50);
+                    return;
+                }
+                const panel = ensurePanel();
+                panel.classList.add('visible');
+                renderState(panel, 'idle', 'Realtime translate ready. Join a Teams call to start.', null);
+                console.log('[RealtimePanel] Mounted and visible');
+            } catch (err) {
+                console.error('[RealtimePanel] init error:', err);
+                // Retry once more in case of transient DOM issues
+                setTimeout(initPanelWhenReady, 200);
+            }
+        }
 
-        console.log('[RealtimePanel] Mounted');
+        // Wait for DOM ready before mounting
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initPanelWhenReady);
+        } else {
+            initPanelWhenReady();
+        }
+
+        // Safety net: try again after window.load (some SPAs replace body)
+        window.addEventListener('load', () => {
+            if (!document.getElementById(PANEL_ID)) {
+                console.log('[RealtimePanel] Re-mounting on window.load');
+                initPanelWhenReady();
+            }
+        });
     })();
     "#
     .to_string()
