@@ -13,11 +13,16 @@ pub fn get_meeting_detection_script() -> String {
         let meetingStartTime = null;
         
         // Send message to Rust backend via IPC
+        // Use wry's window.ipc.postMessage (which wraps window.chrome.webview.postMessage)
+        // Reference: wry-0.55.1/src/webview2/mod.rs:885
         function notifyBackend(type, data) {
-            if (window.__TAURI_IPC__) {
-                window.__TAURI_IPC__.invoke(type, data);
-            } else if (window.chrome?.webview?.postMessage) {
-                window.chrome.webview.postMessage(JSON.stringify({type, data}));
+            const msg = JSON.stringify({type: type, data: data});
+            if (window.ipc && typeof window.ipc.postMessage === 'function') {
+                window.ipc.postMessage(msg);
+            } else if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage) {
+                window.chrome.webview.postMessage(msg);
+            } else {
+                console.warn('[MeetingDetect] No IPC channel available');
             }
         }
         

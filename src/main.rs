@@ -22,7 +22,7 @@ use wry::{WebView, WebViewBuilder, WebViewBuilderExtWindows, NewWindowResponse, 
 
 use app::AppConfig;
 use config::ConfigManager;
-use meeting::{MeetingNotesGenerator, MeetingNotesConfig, RealtimePayload, RealtimeTranslatePipeline};
+use meeting::{MeetingNotesGenerator, MeetingNotesConfig, RealtimePayload, RealtimeTranslateConfig, RealtimeTranslatePipeline};
 use ui::auto_read::get_auto_read_script;
 use ui::badge::{parse_unread_count, play_notification_sound, update_taskbar_badge};
 use ui::browser::open_url_smart;
@@ -40,6 +40,10 @@ struct MeetingState {
     realtime_pipeline: Arc<Mutex<Option<RealtimeTranslatePipeline>>>,
     /// Receiver for the pipeline's payload stream; drained from the event loop
     realtime_rx: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<RealtimePayload>>>>,
+    /// Sender for panel state changes (idle/listening/error); the IPC handler pushes here
+    panel_state_tx: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedSender<PanelState>>>>,
+    /// Receiver for panel state changes; the event loop drains this and injects JS
+    panel_state_rx: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<PanelState>>>>,
     /// Reference to the WebView (wrapped in Arc because WebView is not Clone)
     /// so we can inject translated captions as JS
     webview: Arc<Mutex<Option<Arc<WebView>>>>,
@@ -47,6 +51,7 @@ struct MeetingState {
 
 impl MeetingState {
     fn new(config: MeetingNotesConfig) -> Self {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<PanelState>();
         Self {
             is_meeting_active: Arc::new(AtomicBool::new(false)),
             generator: Arc::new(Mutex::new(
@@ -54,9 +59,45 @@ impl MeetingState {
             )),
             realtime_pipeline: Arc::new(Mutex::new(None)),
             realtime_rx: Arc::new(Mutex::new(None)),
+            panel_state_tx: Arc::new(Mutex::new(Some(tx))),
+            panel_state_rx: Arc::new(Mutex::new(Some(rx))),
             webview: Arc::new(Mutex::new(None)),
         }
     }
+}
+
+/// Panel state pushed to the UI so the user can see what's happening
+#[derive(Debug, Clone)]
+struct PanelState {
+    state: String, // "listening" | "error" | "no_api_key" | "no_mic" | "stopped" | "idle"
+    message: String,
+    detail: Option<String>,
+}
+
+/// Pre-flight check: verify API key + audio device before starting the pipeline.
+/// Returns Ok(()) if all good, Err with a user-friendly message otherwise.
+fn check_realtime_prereq(cfg: &RealtimeTranslateConfig) -> Result<(), String> {
+    // Check API keys for non-local providers
+    let needs_key = |t: &str| matches!(t, "openai" | "google" | "deepl");
+    if needs_key(&cfg.stt.provider_type) && cfg.stt.api_key.trim().is_empty() {
+        return Err(format!(
+            "STT provider '{}' requires an API key. Set [realtime_translate.stt] api_key in config.toml.",
+            cfg.stt.provider_type
+        ));
+    }
+    if needs_key(&cfg.translator.provider_type) && cfg.translator.api_key.trim().is_empty() {
+        return Err(format!(
+            "Translator provider '{}' requires an API key. Set [realtime_translate.translator] api_key in config.toml.",
+            cfg.translator.provider_type
+        ));
+    }
+    if needs_key(&cfg.suggester.provider_type) && cfg.suggester.api_key.trim().is_empty() {
+        return Err(format!(
+            "Suggester provider '{}' requires an API key. Set [realtime_translate.suggester] api_key in config.toml.",
+            cfg.suggester.provider_type
+        ));
+    }
+    Ok(())
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -302,7 +343,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             // Handle IPC messages from JavaScript
             let body = message.body();
             if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&body) {
-                if msg["type"] == "meeting_state_changed" {
+                let msg_type = msg["type"].as_str().unwrap_or("");
+
+                if msg_type == "meeting_state_changed" {
                     let active = msg["data"]["active"].as_bool().unwrap_or(false);
                     let duration = msg["data"]["duration"].as_u64().unwrap_or(0);
 
@@ -326,25 +369,63 @@ fn main() -> Result<(), Box<dyn Error>> {
                             if let Ok(rt_cfg_lock) = realtime_cfg_ipc.lock() {
                                 if let Some(cfg) = rt_cfg_lock.as_ref() {
                                     if cfg.enabled {
-                                        let (tx, rx) =
-                                            tokio::sync::mpsc::unbounded_channel::<RealtimePayload>();
-                                        let pipeline = RealtimeTranslatePipeline::new(
-                                            cfg.clone(),
-                                            tx,
-                                        );
-                                        if let Err(e) = pipeline.start() {
-                                            log::error!("Failed to start realtime translate: {}", e);
+                                        // Pre-flight: check API key
+                                        if let Err(err) = check_realtime_prereq(cfg) {
+                                            log::error!("[Realtime] Pre-flight failed: {}", err);
+                                            if let Ok(mut slot) = state.panel_state_tx.lock() {
+                                                if let Some(tx) = slot.as_ref() {
+                                                    let _ = tx.send(PanelState {
+                                                        state: "no_api_key".into(),
+                                                        message: err.clone(),
+                                                        detail: None,
+                                                    });
+                                                }
+                                            }
                                         } else {
-                                            if let Ok(mut slot) = state.realtime_pipeline.lock() {
-                                                *slot = Some(pipeline);
-                                            }
-                                            if let Ok(mut slot) = state.realtime_rx.lock() {
-                                                *slot = Some(rx);
-                                            }
-                                            log::info!(
-                                                "Realtime translate started: {} -> {}",
-                                                cfg.source_lang, cfg.target_lang
+                                            let (tx, rx) =
+                                                tokio::sync::mpsc::unbounded_channel::<RealtimePayload>();
+                                            let pipeline = RealtimeTranslatePipeline::new(
+                                                cfg.clone(),
+                                                tx,
                                             );
+                                            match pipeline.start() {
+                                                Ok(()) => {
+                                                    if let Ok(mut slot) = state.realtime_pipeline.lock() {
+                                                        *slot = Some(pipeline);
+                                                    }
+                                                    if let Ok(mut slot) = state.realtime_rx.lock() {
+                                                        *slot = Some(rx);
+                                                    }
+                                                    if let Ok(mut slot) = state.panel_state_tx.lock() {
+                                                        if let Some(tx) = slot.as_ref() {
+                                                            let _ = tx.send(PanelState {
+                                                                state: "listening".into(),
+                                                                message: format!(
+                                                                    "Listening · {} → {}",
+                                                                    cfg.source_lang, cfg.target_lang
+                                                                ),
+                                                                detail: None,
+                                                            });
+                                                        }
+                                                    }
+                                                    log::info!(
+                                                        "Realtime translate started: {} -> {}",
+                                                        cfg.source_lang, cfg.target_lang
+                                                    );
+                                                }
+                                                Err(e) => {
+                                                    log::error!("Failed to start pipeline: {}", e);
+                                                    if let Ok(mut slot) = state.panel_state_tx.lock() {
+                                                        if let Some(tx) = slot.as_ref() {
+                                                            let _ = tx.send(PanelState {
+                                                                state: "error".into(),
+                                                                message: "Failed to start audio capture".into(),
+                                                                detail: Some(e.to_string()),
+                                                            });
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -364,6 +445,102 @@ fn main() -> Result<(), Box<dyn Error>> {
                             }
                             if let Ok(mut slot) = state.realtime_rx.lock() {
                                 *slot = None;
+                            }
+                            if let Ok(mut slot) = state.panel_state_tx.lock() {
+                                if let Some(tx) = slot.as_ref() {
+                                    let _ = tx.send(PanelState {
+                                        state: "stopped".into(),
+                                        message: "Meeting ended".into(),
+                                        detail: None,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                } else if msg_type == "realtime_toggle" {
+                    // Manual start/stop from the panel button
+                    let enable = msg["data"]["enabled"].as_bool().unwrap_or(false);
+                    log::info!("Realtime toggle: enabled={}", enable);
+                    if let Ok(state) = meeting_state_ipc.lock() {
+                        if enable {
+                            if let Ok(rt_cfg_lock) = realtime_cfg_ipc.lock() {
+                                if let Some(cfg) = rt_cfg_lock.as_ref() {
+                                    if let Err(err) = check_realtime_prereq(cfg) {
+                                        log::error!("[Realtime] Pre-flight failed: {}", err);
+                                        if let Ok(mut slot) = state.panel_state_tx.lock() {
+                                            if let Some(tx) = slot.as_ref() {
+                                                let _ = tx.send(PanelState {
+                                                    state: "no_api_key".into(),
+                                                    message: err.clone(),
+                                                    detail: None,
+                                                });
+                                            }
+                                        }
+                                    } else {
+                                        let (tx, rx) =
+                                            tokio::sync::mpsc::unbounded_channel::<RealtimePayload>();
+                                        let pipeline = RealtimeTranslatePipeline::new(
+                                            cfg.clone(),
+                                            tx,
+                                        );
+                                        match pipeline.start() {
+                                            Ok(()) => {
+                                                if let Ok(mut slot) = state.realtime_pipeline.lock() {
+                                                    *slot = Some(pipeline);
+                                                }
+                                                if let Ok(mut slot) = state.realtime_rx.lock() {
+                                                    *slot = Some(rx);
+                                                }
+                                                state.is_meeting_active.store(true, Ordering::Relaxed);
+                                                if let Ok(mut slot) = state.panel_state_tx.lock() {
+                                                    if let Some(tx) = slot.as_ref() {
+                                                        let _ = tx.send(PanelState {
+                                                            state: "listening".into(),
+                                                            message: format!(
+                                                                "Listening (manual) · {} → {}",
+                                                                cfg.source_lang, cfg.target_lang
+                                                            ),
+                                                            detail: None,
+                                                        });
+                                                    }
+                                                }
+                                            }
+                                            Err(e) => {
+                                                log::error!("Manual start failed: {}", e);
+                                                if let Ok(mut slot) = state.panel_state_tx.lock() {
+                                                    if let Some(tx) = slot.as_ref() {
+                                                        let _ = tx.send(PanelState {
+                                                            state: "no_mic".into(),
+                                                            message: "Cannot start audio capture".into(),
+                                                            detail: Some(e.to_string()),
+                                                        });
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            // Stop
+                            state.is_meeting_active.store(false, Ordering::Relaxed);
+                            if let Ok(mut slot) = state.realtime_pipeline.lock() {
+                                if let Some(p) = slot.as_ref() {
+                                    p.stop();
+                                }
+                                *slot = None;
+                            }
+                            if let Ok(mut slot) = state.realtime_rx.lock() {
+                                *slot = None;
+                            }
+                            if let Ok(mut slot) = state.panel_state_tx.lock() {
+                                if let Some(tx) = slot.as_ref() {
+                                    let _ = tx.send(PanelState {
+                                        state: "stopped".into(),
+                                        message: "Stopped manually".into(),
+                                        detail: None,
+                                    });
+                                }
                             }
                         }
                     }
@@ -475,6 +652,31 @@ fn main() -> Result<(), Box<dyn Error>> {
                                     if let Err(e) = wv.evaluate_script(&js) {
                                         log::warn!("Failed to inject realtime payload: {}", e);
                                     }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Drain panel state changes and inject as JS event
+            if let Ok(mut rx_slot) = state.panel_state_rx.lock() {
+                if let Some(rx) = rx_slot.as_mut() {
+                    while let Ok(ps) = rx.try_recv() {
+                        if let Ok(wv_slot) = state.webview.lock() {
+                            if let Some(wv) = wv_slot.as_ref() {
+                                let detail_json = match &ps.detail {
+                                    Some(d) => format!(r#""{}""#, d.replace('\\', "\\\\").replace('"', "\\\"")),
+                                    None => "null".to_string(),
+                                };
+                                let js = format!(
+                                    "window.dispatchEvent(new CustomEvent('rteams-panel-state', {{ detail: {{ state: '{}', message: '{}', detail: {} }} }}));",
+                                    ps.state,
+                                    ps.message.replace('\\', "\\\\").replace('\'', "\\'"),
+                                    detail_json,
+                                );
+                                if let Err(e) = wv.evaluate_script(&js) {
+                                    log::warn!("Failed to inject panel state: {}", e);
                                 }
                             }
                         }
