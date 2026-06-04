@@ -2905,7 +2905,7 @@ dependencies = [
 
 [[package]]
 name = "rust_teams"
-version = "0.7.5"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "async-trait",

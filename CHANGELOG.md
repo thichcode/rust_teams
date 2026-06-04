@@ -2,6 +2,59 @@
 
 All notable changes to R Teams.
 
+## [0.8.0] - 2026-06-04
+
+### Added
+- **Local LLM mode** — run STT, translation, and suggestions entirely offline (no API keys needed)
+  - 3-step wizard picks models for each pipeline role (STT → Translator → Suggester)
+  - Uses whisper.cpp for local STT (auto-downloaded on first use)
+  - Uses Ollama for local translation & suggestions
+  - Per-provider hybrid dropdown allows mixing local + cloud providers
+  - `LocalPreset` in config with 7 fields: `stt_model`, `translator_model`, `suggester_model`, `ollama_endpoint`, `whisper_binary`, `whisper_model`, `last_checked`
+  - `check_local_readiness()` verifies both Ollama and Whisper availability
+  - `build_wizard_options()` returns available models with recommended defaults
+  - IPC handlers: `local_setup_open` + `local_setup_apply`
+  - "🖥 Local" button in panel opens the wizard modal
+  - Result banner shows green "ready" or amber "partial" status
+  - `docs/LOCAL_LLM.md` — user guide with setup instructions
+
+## [0.7.5] - 2026-06-03
+
+### Changed
+- **Auto-read v2** rewritten — opens each unread chat, reads bottom-most visible message bubble, verifies keyword, clicks back on miss
+  - 30s cycle, max 3 chats/cycle, 5-min cooldown per chat (WeakMap)
+  - `isUserTyping()` guard (skip if reply input has focus or content)
+  - Selectors: `[data-tid="chat-item"]`, `[aria-label*="unread"]`, `[data-tid="messageBodyContent"]`, `[data-tid="chat-header-back"]`
+  - Falls back to `Alt+Left` if back button not found
+
+## [0.7.4] - 2026-06-03
+
+### Added
+- **In-panel API key configuration** — "⚙ Configure" button opens modal with STT/Translator/Suggester password fields
+  - Empty field = keep existing value (safe update)
+  - `config_update` IPC handler → PanelState `"config_saved"` with config path
+  - `ConfigManager::update_api_keys()` + `config_path()`
+
+### Added
+- **WASAPI loopback capture** — `wasapi` 0.20 crate + `src/meeting/loopback.rs`
+  - `AUDCLNT_STREAMFLAGS_LOOPBACK` on default render device
+  - 16kHz mono f32, `Arc<Mutex<Vec<f32>>>` shared buffer
+  - `AudioCapture::start_recording()` spawns loopback thread when `record_system_audio=true`; cpal fallback kept
+
+## [0.7.3] - 2026-06-02
+
+### Fixed
+- **Panel auto-show** rewritten to poll `document.body` with `setTimeout` 50ms
+  - No longer fails silently when body isn't ready at init time
+  - Retries once more at 200ms if first attempt fails
+
+## [0.7.2] - 2026-06-02
+
+### Added
+- **Realtime translate UI feedback** — `PanelState` channel with state machine
+  - States: `idle`, `listening`, `error`, `no_api_key`, `no_mic`, `stopped`
+  - Visual indicators for each state in the panel status bar
+
 ## [0.7.1] - 2026-06-01
 
 ### Fixed

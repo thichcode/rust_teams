@@ -84,6 +84,14 @@ cargo run --release
 - 🎭 **No Animations** — Smooth scrolling disabled for performance
 - 📉 **Low CPU** — Minimal background resource usage
 
+### Local LLM Mode
+
+- 🖥 **Offline STT** — whisper.cpp auto-downloaded on first run
+- 🤖 **Local Translation & Suggestions** — Ollama with any installed model
+- 🔄 **Hybrid Providers** — Mix local + cloud per pipeline role
+- ⚙️ **3-Step Wizard** — Pick models for STT, translator, suggester
+- ✅ **Readiness Check** — Verifies Ollama + Whisper availability
+
 ### Privacy & Control
 
 - 🛡️ **Ad Blocking** — Built-in blocked domains list
@@ -171,15 +179,33 @@ rust_teams/
 │   ├── default_config.json # Default configuration
 │   └── blocked_domains.json # Ad/tracker blocklist
 ├── src/
-│   ├── main.rs             # Entry point + WebView setup
+│   ├── main.rs             # Entry point + WebView setup + IPC handlers
 │   ├── app.rs              # Config types + Memory optimization
-│   ├── config.rs           # Config management
+│   ├── config.rs           # Config management (save/load API keys, presets)
 │   ├── error.rs            # Error types
+│   ├── memory.rs           # Chromium flags profiles
+│   ├── updater.rs          # Auto-update
+│   ├── meeting/
+│   │   ├── mod.rs          # Meeting detection + LocalPreset export
+│   │   ├── local_check.rs  # Local readiness + Ollama client + wizard options
+│   │   ├── realtime_config.rs # RealtimeTranslateConfig + LocalPreset
+│   │   ├── pipeline.rs     # STT → Translate → Suggest pipeline
+│   │   ├── audio.rs        # Audio capture (cpal + WASAPI loopback)
+│   │   ├── loopback.rs     # WASAPI loopback capture
+│   │   ├── translate.rs    # Translation providers
+│   │   └── notes.rs        # Meeting notes
 │   └── ui/
-│       └── mod.rs          # Window settings
+│       ├── mod.rs          # Window settings + IPC registration
+│       ├── badge.rs        # Unread badge
+│       ├── auto_read.rs    # Auto-read v2
+│       └── realtime_panel.rs # Panel + configure modal + local wizard
+├── docs/
+│   ├── MEMORY.md           # Memory optimization flags reference
+│   ├── CODE_SIGNING.md     # Certificate setup guide
+│   └── LOCAL_LLM.md        # Local LLM mode user guide
 ├── Cargo.toml
-├── compare.md              # vs MS Teams comparison
-├── MEMORY_OPTIMIZED.md     # Memory optimization docs
+├── CHANGELOG.md
+├── README.md
 └── LICENSE
 ```
 
