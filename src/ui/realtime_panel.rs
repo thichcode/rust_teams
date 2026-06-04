@@ -158,6 +158,91 @@ pub fn get_realtime_panel_script() -> String {
                 #${PANEL_ID} .rt-action-btn:hover {
                     background: rgba(98,100,167,0.45);
                 }
+                #rt-config-modal {
+                    position: fixed;
+                    top: 0; left: 0; right: 0; bottom: 0;
+                    background: rgba(0,0,0,0.7);
+                    z-index: 2147483647;
+                    display: none;
+                    align-items: center;
+                    justify-content: center;
+                    font-family: 'Segoe UI', system-ui, sans-serif;
+                }
+                #rt-config-modal.visible { display: flex; }
+                #rt-config-modal .rt-modal-box {
+                    background: #2a2a2a;
+                    color: #f5f5f5;
+                    border: 1px solid #6264A7;
+                    border-radius: 8px;
+                    padding: 20px;
+                    width: 480px;
+                    max-width: 90vw;
+                    max-height: 90vh;
+                    overflow-y: auto;
+                    box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+                }
+                #rt-config-modal h3 {
+                    margin: 0 0 12px;
+                    color: #c8c8ff;
+                    font-size: 16px;
+                }
+                #rt-config-modal p {
+                    margin: 0 0 14px;
+                    font-size: 12px;
+                    color: #b6b6b6;
+                    line-height: 1.5;
+                }
+                #rt-config-modal label {
+                    display: block;
+                    font-size: 11px;
+                    text-transform: uppercase;
+                    color: #b6b6b6;
+                    margin-top: 10px;
+                    margin-bottom: 4px;
+                    letter-spacing: 0.04em;
+                }
+                #rt-config-modal input {
+                    width: 100%;
+                    padding: 8px 10px;
+                    background: #1a1a1a;
+                    border: 1px solid #444;
+                    border-radius: 4px;
+                    color: #f5f5f5;
+                    font: inherit;
+                    font-size: 12px;
+                    box-sizing: border-box;
+                }
+                #rt-config-modal input:focus {
+                    outline: none;
+                    border-color: #6264A7;
+                }
+                #rt-config-modal .rt-modal-actions {
+                    margin-top: 18px;
+                    display: flex;
+                    gap: 8px;
+                    justify-content: flex-end;
+                }
+                #rt-config-modal button {
+                    background: #6264A7;
+                    color: #fff;
+                    border: 0;
+                    padding: 8px 16px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font: inherit;
+                    font-size: 12px;
+                }
+                #rt-config-modal button:hover { background: #7a7cc7; }
+                #rt-config-modal button.rt-btn-secondary {
+                    background: transparent;
+                    color: #b6b6b6;
+                    border: 1px solid #555;
+                }
+                #rt-config-modal .rt-config-hint {
+                    font-size: 10px;
+                    color: #888;
+                    margin-top: 4px;
+                }
             `;
             document.head.appendChild(style);
         }
@@ -197,6 +282,7 @@ pub fn get_realtime_panel_script() -> String {
                 <div class="rt-error-detail" style="display:none"></div>
                 <div class="rt-actions">
                     <button class="rt-action-btn" id="rt-toggle-listen">Start listening</button>
+                    <button class="rt-action-btn" id="rt-configure">⚙ Configure</button>
                 </div>
             `;
             document.body.appendChild(panel);
@@ -271,7 +357,70 @@ pub fn get_realtime_panel_script() -> String {
                 }
             });
 
+            // Configure API keys
+            panel.querySelector('#rt-configure').addEventListener('click', () => {
+                showConfigModal();
+            });
+
             return panel;
+        }
+
+        function showConfigModal() {
+            let modal = document.getElementById('rt-config-modal');
+            if (modal) {
+                modal.classList.add('visible');
+                return;
+            }
+            modal = document.createElement('div');
+            modal.id = 'rt-config-modal';
+            modal.innerHTML = `
+                <div class="rt-modal-box">
+                    <h3>⚙ Configure API keys</h3>
+                    <p>Enter your OpenAI / Google / DeepL API keys. Leave blank to keep existing value. Keys are saved to <code>%APPDATA%\\rust_teams\\config.json</code>.</p>
+                    <label>STT (Speech-to-Text) API key</label>
+                    <input type="password" id="cfg-stt" placeholder="sk-... (OpenAI Whisper)">
+                    <div class="rt-config-hint">Used for transcribing call audio. Set api_key if provider is openai / google / deepl.</div>
+                    <label>Translator API key</label>
+                    <input type="password" id="cfg-translator" placeholder="sk-... (OpenAI GPT-4o-mini / Google / DeepL)">
+                    <div class="rt-config-hint">Used for translating transcripts.</div>
+                    <label>Suggester API key</label>
+                    <input type="password" id="cfg-suggester" placeholder="sk-... (OpenAI GPT-4o-mini / Ollama)">
+                    <div class="rt-config-hint">Used for generating reply suggestions.</div>
+                    <div class="rt-modal-actions">
+                        <button class="rt-btn-secondary" id="cfg-cancel">Cancel</button>
+                        <button id="cfg-save">Save</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            modal.classList.add('visible');
+
+            modal.querySelector('#cfg-cancel').addEventListener('click', () => {
+                modal.classList.remove('visible');
+            });
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) modal.classList.remove('visible');
+            });
+            modal.querySelector('#cfg-save').addEventListener('click', () => {
+                const stt = modal.querySelector('#cfg-stt').value.trim();
+                const translator = modal.querySelector('#cfg-translator').value.trim();
+                const suggester = modal.querySelector('#cfg-suggester').value.trim();
+                if (!stt && !translator && !suggester) {
+                    alert('Please enter at least one key (or close to cancel).');
+                    return;
+                }
+                if (window.ipc && window.ipc.postMessage) {
+                    window.ipc.postMessage(JSON.stringify({
+                        type: 'config_update',
+                        data: {
+                            stt_api_key: stt,
+                            translator_api_key: translator,
+                            suggester_api_key: suggester
+                        }
+                    }));
+                }
+                modal.classList.remove('visible');
+            });
         }
 
         function renderPayload(panel, payload) {

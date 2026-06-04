@@ -12,10 +12,15 @@ use cpal::{Device, SampleFormat, SampleRate, Stream, StreamConfig};
 
 use super::config::AudioConfig;
 
+#[cfg(windows)]
+use super::loopback::{start_loopback, LoopbackHandle};
+
 /// Audio capture manager
 pub struct AudioCapture {
     mic_stream: Option<Stream>,
     system_stream: Option<Stream>,
+    #[cfg(windows)]
+    loopback_handle: Option<LoopbackHandle>,
     buffer: Arc<Mutex<Vec<f32>>>,
     is_recording: Arc<AtomicBool>,
     config: AudioConfig,
@@ -27,6 +32,8 @@ impl AudioCapture {
         Ok(Self {
             mic_stream: None,
             system_stream: None,
+            #[cfg(windows)]
+            loopback_handle: None,
             buffer: Arc::new(Mutex::new(Vec::new())),
             is_recording: Arc::new(AtomicBool::new(false)),
             config,
@@ -59,11 +66,34 @@ impl AudioCapture {
 
         // Start system audio capture (WASAPI loopback on Windows)
         if self.config.record_system_audio {
-            if let Some(device) = self.get_loopback_device(&host) {
-                log::info!("Using system audio loopback");
-                self.system_stream = Some(self.start_input_stream(&device)?);
-            } else {
-                log::warn!("No system audio loopback available");
+            #[cfg(windows)]
+            {
+                match start_loopback(self.buffer.clone()) {
+                    Ok(handle) => {
+                        log::info!("WASAPI system audio loopback started");
+                        self.loopback_handle = Some(handle);
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "WASAPI loopback failed to start ({}), falling back to cpal device scan",
+                            e
+                        );
+                        if let Some(device) = self.get_loopback_device(&host) {
+                            self.system_stream = Some(self.start_input_stream(&device)?);
+                        } else {
+                            log::warn!("No system audio loopback available");
+                        }
+                    }
+                }
+            }
+            #[cfg(not(windows))]
+            {
+                if let Some(device) = self.get_loopback_device(&host) {
+                    log::info!("Using system audio loopback (cpal fallback)");
+                    self.system_stream = Some(self.start_input_stream(&device)?);
+                } else {
+                    log::warn!("No system audio loopback available");
+                }
             }
         }
 
@@ -80,6 +110,12 @@ impl AudioCapture {
         // Drop streams to stop recording
         self.mic_stream.take();
         self.system_stream.take();
+        #[cfg(windows)]
+        {
+            if let Some(handle) = self.loopback_handle.take() {
+                handle.stop();
+            }
+        }
 
         // Get buffer
         let buffer = {

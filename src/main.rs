@@ -212,6 +212,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Realtime translate config is needed by the IPC handler when a call starts
     let realtime_cfg_ipc: Arc<Mutex<Option<meeting::RealtimeTranslateConfig>>> =
         Arc::new(Mutex::new(Some(config.realtime_translate.clone())));
+    // Config manager wrapped in Arc for the IPC handler (used to persist API key updates)
+    let config_manager_ipc: Arc<ConfigManager> = Arc::new(config_manager);
 
     // Auto-download whisper.cpp + model if local STT is configured
     #[cfg(target_os = "windows")]
@@ -541,6 +543,50 @@ fn main() -> Result<(), Box<dyn Error>> {
                                         detail: None,
                                     });
                                 }
+                            }
+                        }
+                    }
+                } else if msg_type == "config_update" {
+                    // Panel submitted new API key(s); persist to config.json
+                    log::info!("Config update received from panel");
+                    let stt_key = msg["data"]["stt_api_key"].as_str().map(String::from);
+                    let translator_key = msg["data"]["translator_api_key"].as_str().map(String::from);
+                    let suggester_key = msg["data"]["suggester_api_key"].as_str().map(String::from);
+
+                    let result = config_manager_ipc.update_api_keys(
+                        stt_key.clone(),
+                        translator_key.clone(),
+                        suggester_key.clone(),
+                    );
+
+                    let (state_str, msg_str, detail) = match &result {
+                        Ok(updated_cfg) => {
+                            // Update in-memory cache so next pipeline start uses the new keys
+                            if let Ok(mut slot) = realtime_cfg_ipc.lock() {
+                                *slot = Some(updated_cfg.clone());
+                            }
+                            log::info!("API keys saved to {}", config_manager_ipc.config_path().display());
+                            (
+                                "config_saved".to_string(),
+                                "API key(s) saved · click Start listening to retry".to_string(),
+                                Some(config_manager_ipc.config_path().display().to_string()),
+                            )
+                        }
+                        Err(e) => (
+                            "error".to_string(),
+                            "Failed to save config".to_string(),
+                            Some(e.to_string()),
+                        ),
+                    };
+
+                    if let Ok(state) = meeting_state_ipc.lock() {
+                        if let Ok(slot) = state.panel_state_tx.lock() {
+                            if let Some(tx) = slot.as_ref() {
+                                let _ = tx.send(PanelState {
+                                    state: state_str,
+                                    message: msg_str,
+                                    detail,
+                                });
                             }
                         }
                     }

@@ -69,6 +69,34 @@ impl ConfigManager {
         Ok(())
     }
 
+    /// Update API keys for realtime translate (stt, translator, suggester).
+    /// Returns the updated `RealtimeTranslateConfig` so callers can apply
+    /// it to the running pipeline without restart.
+    pub fn update_api_keys(
+        &self,
+        stt_key: Option<String>,
+        translator_key: Option<String>,
+        suggester_key: Option<String>,
+    ) -> Result<RealtimeTranslateConfig> {
+        let mut cfg = self.load().unwrap_or_else(|_| self.default_config());
+        if let Some(k) = stt_key {
+            cfg.realtime_translate.stt.api_key = k;
+        }
+        if let Some(k) = translator_key {
+            cfg.realtime_translate.translator.api_key = k;
+        }
+        if let Some(k) = suggester_key {
+            cfg.realtime_translate.suggester.api_key = k;
+        }
+        self.save(&cfg)?;
+        Ok(cfg.realtime_translate)
+    }
+
+    /// Public accessor for the on-disk config path (for diagnostics / messages)
+    pub fn config_path(&self) -> &std::path::Path {
+        &self.config_path
+    }
+
     #[allow(dead_code)]
     pub fn validate(&self, _config: &AppConfig) -> Result<()> {
         // TODO: Add validation logic

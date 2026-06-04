@@ -1,6 +1,6 @@
 [package]
 name = "rust_teams"
-version = "0.7.3"
+version = "0.7.4"
 edition = "2024"  # Latest Rust edition (2024)
 
 [features]
@@ -61,3 +61,5 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["winuser", "shellapi", "winbase", "processthreadsapi", "wincon"] }
 cpal = "0.13"
+# WASAPI bindings for system audio loopback capture
+wasapi = "0.20"

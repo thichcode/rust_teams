@@ -13,6 +13,7 @@ pub mod audio;
 pub mod config;
 pub mod detect;
 pub mod llm;
+pub mod loopback;
 pub mod notes;
 pub mod realtime;
 pub mod realtime_config;
