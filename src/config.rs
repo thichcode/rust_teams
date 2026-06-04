@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use crate::app::{AppConfig, MemoryOptimization, Profile, WindowSettings};
 use crate::meeting::config::MeetingNotesConfig;
-use crate::meeting::realtime_config::RealtimeTranslateConfig;
+use crate::meeting::realtime_config::{LocalPreset, RealtimeTranslateConfig};
 
 #[derive(Debug)]
 pub struct ConfigManager {
@@ -95,6 +95,17 @@ impl ConfigManager {
     /// Public accessor for the on-disk config path (for diagnostics / messages)
     pub fn config_path(&self) -> &std::path::Path {
         &self.config_path
+    }
+
+    /// Update the local-mode preset in `realtime_translate`, persist to
+    /// disk, and return the updated config. Caller is expected to apply
+    /// the returned config to the running pipeline before returning.
+    #[allow(dead_code)]
+    pub fn update_local_preset(&self, preset: &LocalPreset) -> Result<RealtimeTranslateConfig> {
+        let mut cfg = self.load().unwrap_or_else(|_| self.default_config());
+        cfg.realtime_translate.apply_local_preset(preset);
+        self.save(&cfg)?;
+        Ok(cfg.realtime_translate)
     }
 
     #[allow(dead_code)]
