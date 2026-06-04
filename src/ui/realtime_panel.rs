@@ -243,6 +243,106 @@ pub fn get_realtime_panel_script() -> String {
                     color: #888;
                     margin-top: 4px;
                 }
+                #rt-local-wizard {
+                    position: fixed;
+                    top: 0; left: 0; right: 0; bottom: 0;
+                    background: rgba(0,0,0,0.7);
+                    z-index: 2147483647;
+                    display: none;
+                    align-items: center;
+                    justify-content: center;
+                    font-family: 'Segoe UI', system-ui, sans-serif;
+                }
+                #rt-local-wizard.visible { display: flex; }
+                #rt-local-wizard .rt-modal-box {
+                    background: #2a2a2a;
+                    color: #f5f5f5;
+                    border: 1px solid #6264A7;
+                    border-radius: 8px;
+                    padding: 20px;
+                    width: 520px;
+                    max-width: 90vw;
+                    max-height: 90vh;
+                    overflow-y: auto;
+                    box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+                }
+                #rt-local-wizard h3 {
+                    margin: 0 0 8px;
+                    color: #c8c8ff;
+                    font-size: 16px;
+                }
+                #rt-local-wizard h4 {
+                    margin: 8px 0;
+                    font-size: 13px;
+                    color: #d0d0d0;
+                }
+                #rt-local-wizard h4 small {
+                    font-weight: normal;
+                    color: #888;
+                }
+                #rt-local-wizard p {
+                    margin: 0 0 12px;
+                    font-size: 12px;
+                    color: #b6b6b6;
+                }
+                #rt-local-wizard .rt-radio-group {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 6px;
+                }
+                #rt-local-wizard .rt-radio {
+                    display: flex;
+                    flex-direction: column;
+                    background: #1a1a1a;
+                    border: 1px solid #444;
+                    border-radius: 6px;
+                    padding: 10px 12px;
+                    cursor: pointer;
+                    font-size: 12px;
+                }
+                #rt-local-wizard .rt-radio:hover {
+                    border-color: #6264A7;
+                }
+                #rt-local-wizard .rt-radio input {
+                    margin-right: 8px;
+                }
+                #rt-local-wizard .rt-radio span {
+                    font-weight: 600;
+                    color: #e0e0e0;
+                }
+                #rt-local-wizard .rt-radio .rt-config-hint {
+                    font-size: 10px;
+                    color: #888;
+                    margin-top: 2px;
+                }
+                #rt-local-wizard .rt-modal-actions {
+                    margin-top: 16px;
+                    display: flex;
+                    gap: 8px;
+                    justify-content: flex-end;
+                }
+                #rt-local-wizard button {
+                    background: #6264A7;
+                    color: #fff;
+                    border: 0;
+                    padding: 8px 16px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font: inherit;
+                    font-size: 12px;
+                }
+                #rt-local-wizard button:hover { background: #7a7cc7; }
+                #rt-local-wizard button.rt-btn-secondary {
+                    background: transparent;
+                    color: #b6b6b6;
+                    border: 1px solid #555;
+                }
+                #rt-local-wizard code {
+                    font-size: 10px;
+                    background: #1a1a1a;
+                    padding: 1px 4px;
+                    border-radius: 3px;
+                }
             `;
             document.head.appendChild(style);
         }
@@ -283,6 +383,7 @@ pub fn get_realtime_panel_script() -> String {
                 <div class="rt-actions">
                     <button class="rt-action-btn" id="rt-toggle-listen">Start listening</button>
                     <button class="rt-action-btn" id="rt-configure">⚙ Configure</button>
+                    <button class="rt-action-btn" id="rt-local-mode">🖥 Local</button>
                 </div>
             `;
             document.body.appendChild(panel);
@@ -362,6 +463,11 @@ pub fn get_realtime_panel_script() -> String {
                 showConfigModal();
             });
 
+            // Local mode wizard
+            panel.querySelector('#rt-local-mode').addEventListener('click', () => {
+                showLocalWizard();
+            });
+
             return panel;
         }
 
@@ -421,6 +527,133 @@ pub fn get_realtime_panel_script() -> String {
                 }
                 modal.classList.remove('visible');
             });
+        }
+
+        // ---- Local LLM mode wizard ----
+
+        function showLocalWizard() {
+            if (window.ipc && window.ipc.postMessage) {
+                window.ipc.postMessage(JSON.stringify({
+                    type: 'local_setup_open',
+                    data: {}
+                }));
+            }
+            // Open immediately with placeholder; populated when Rust replies
+            showLocalWizardModal({ stt: [], translator: [], suggester: [], ollama_endpoint: 'http://localhost:11434', whisper_binary_path: '' });
+        }
+
+        const wizardState = { step: 1, choices: { stt: null, translator: null, suggester: null } };
+
+        function showLocalWizardModal(opts) {
+            let modal = document.getElementById('rt-local-wizard');
+            if (modal) {
+                modal.classList.add('visible');
+                renderWizardStep(modal, opts, 1);
+                return;
+            }
+            modal = document.createElement('div');
+            modal.id = 'rt-local-wizard';
+            modal.innerHTML = `
+                <div class="rt-modal-box">
+                    <h3>🖥 Local LLM mode</h3>
+                    <p>Pick your STT, translator, and suggester models. Then R Teams verifies readiness.</p>
+                    <div id="rt-wizard-step"></div>
+                    <div class="rt-modal-actions">
+                        <button class="rt-btn-secondary" id="rt-wiz-cancel">Cancel</button>
+                        <button class="rt-btn-secondary" id="rt-wiz-back" style="display:none">← Back</button>
+                        <button id="rt-wiz-next">Next →</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            modal.classList.add('visible');
+            modal.querySelector('#rt-wiz-cancel').addEventListener('click', () => {
+                modal.classList.remove('visible');
+            });
+            renderWizardStep(modal, opts, 1);
+        }
+
+        function renderWizardStep(modal, opts, step) {
+            wizardState.step = step;
+            const container = modal.querySelector('#rt-wizard-step');
+            const backBtn = modal.querySelector('#rt-wiz-back');
+            const nextBtn = modal.querySelector('#rt-wiz-next');
+            backBtn.style.display = step > 1 ? '' : 'none';
+            nextBtn.textContent = step < 3 ? 'Next →' : '✓ Apply';
+            const role = step === 1 ? 'stt' : step === 2 ? 'translator' : 'suggester';
+            const title = step === 1 ? 'Pick your STT model'
+                : step === 2 ? 'Pick your Translator model'
+                : 'Pick your Suggester model';
+            const models = opts[role] || [];
+            const radios = models.map((m, i) => `
+                <label class="rt-radio">
+                    <input type="radio" name="rt-wiz-${role}" value="${m.id}" ${m.recommended || i === 0 ? 'checked' : ''}>
+                    <span>${m.label}${m.recommended ? ' ⭐' : ''}</span>
+                    <div class="rt-config-hint">${m.install_hint}</div>
+                </label>
+            `).join('');
+            container.innerHTML = `
+                <h4>${title} <small>(step ${step}/3)</small></h4>
+                <div class="rt-radio-group">
+                    ${radios || '<p>No models available.</p>'}
+                </div>
+                <div class="rt-config-hint" style="margin-top:8px">
+                    Endpoint: <code>${opts.ollama_endpoint}</code><br>
+                    Whisper path: <code>${opts.whisper_binary_path}</code>
+                </div>
+            `;
+            backBtn.onclick = () => renderWizardStep(modal, opts, step - 1);
+            nextBtn.onclick = () => {
+                const selected = container.querySelector(`input[name="rt-wiz-${role}"]:checked`);
+                if (!selected) {
+                    alert('Please pick a model.');
+                    return;
+                }
+                wizardState.choices[role] = { id: selected.value };
+                if (step < 3) {
+                    renderWizardStep(modal, opts, step + 1);
+                } else {
+                    submitWizard(modal);
+                }
+            };
+        }
+
+        function submitWizard(modal) {
+            const choices = {
+                stt: { id: wizardState.choices.stt ? wizardState.choices.stt.id : '', path: null, endpoint: null },
+                translator: { id: wizardState.choices.translator ? wizardState.choices.translator.id : '', path: null, endpoint: null },
+                suggester: { id: wizardState.choices.suggester ? wizardState.choices.suggester.id : '', path: null, endpoint: null }
+            };
+            if (window.ipc && window.ipc.postMessage) {
+                window.ipc.postMessage(JSON.stringify({
+                    type: 'local_setup_apply',
+                    data: JSON.stringify(choices)
+                }));
+            }
+            modal.classList.remove('visible');
+        }
+
+        function showLocalResultBanner(readiness, allReady) {
+            let banner = document.getElementById('rt-local-result');
+            if (!banner) {
+                banner = document.createElement('div');
+                banner.id = 'rt-local-result';
+                banner.style.cssText = 'position:fixed;top:16px;right:16px;z-index:2147483647;padding:12px 16px;border-radius:6px;font:13px Segoe UI;max-width:340px;box-shadow:0 4px 12px rgba(0,0,0,.3);transition:opacity .3s';
+                document.body.appendChild(banner);
+            }
+            const ok = readiness && readiness.ollama && readiness.whisper
+                && readiness.ollama.status === 'ready' && readiness.whisper.status === 'ready';
+            banner.style.background = (allReady && ok) ? '#1d6f1d' : '#a87a00';
+            banner.style.color = '#fff';
+            banner.textContent = (allReady && ok)
+                ? '✅ Local mode ready — pipeline will use local providers'
+                : '⚠ Local mode partially ready — check Configure for details';
+            banner.style.display = 'block';
+            banner.style.opacity = '1';
+            setTimeout(() => {
+                banner.style.opacity = '0';
+                setTimeout(() => { banner.style.display = 'none'; }, 300);
+            }, allReady ? 4000 : 8000);
         }
 
         function renderPayload(panel, payload) {
@@ -530,6 +763,16 @@ pub fn get_realtime_panel_script() -> String {
             try {
                 const panel = ensurePanel();
                 const d = e.detail || {};
+                if (d.state === 'local_wizard_options' && d.detail) {
+                    try { showLocalWizardModal(JSON.parse(d.detail)); } catch (_) {}
+                    return;
+                }
+                if (d.state === 'local_ready' || d.state === 'local_partial') {
+                    let readiness = null;
+                    try { readiness = d.detail ? JSON.parse(d.detail) : null; } catch (_) {}
+                    showLocalResultBanner(readiness, d.state === 'local_ready');
+                    return;
+                }
                 renderState(panel, d.state, d.message, d.detail);
             } catch (err) {
                 console.error('[RealtimePanel] state error:', err);
