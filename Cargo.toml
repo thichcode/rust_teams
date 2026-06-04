@@ -60,6 +60,6 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 # Windows-specific dependencies
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["winuser", "shellapi", "winbase", "processthreadsapi", "wincon"] }
-cpal = "0.13"
+cpal = "0.17"
 # WASAPI bindings for system audio loopback capture
 wasapi = "0.20"
