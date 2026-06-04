@@ -23,6 +23,8 @@ use wry::{WebView, WebViewBuilder, WebViewBuilderExtWindows, NewWindowResponse, 
 use app::AppConfig;
 use config::ConfigManager;
 use meeting::{MeetingNotesGenerator, MeetingNotesConfig, RealtimePayload, RealtimeTranslateConfig, RealtimeTranslatePipeline};
+use meeting::local_check::{build_wizard_options, check_local_readiness, LocalChoices, ProviderStatus};
+use meeting::LocalPreset;
 use ui::auto_read::get_auto_read_script;
 use ui::badge::{parse_unread_count, play_notification_sound, update_taskbar_badge};
 use ui::browser::open_url_smart;
@@ -546,6 +548,104 @@ fn main() -> Result<(), Box<dyn Error>> {
                             }
                         }
                     }
+                } else if msg_type == "local_setup_open" {
+                    // Panel opened the local-mode wizard; build static catalog
+                    log::info!("IPC: local_setup_open");
+                    let cfg = if let Ok(slot) = realtime_cfg_ipc.lock() {
+                        slot.as_ref().cloned().unwrap_or_else(RealtimeTranslateConfig::default)
+                    } else {
+                        RealtimeTranslateConfig::default()
+                    };
+                    let opts = build_wizard_options(&cfg);
+                    if let Ok(state) = meeting_state_ipc.lock() {
+                        if let Ok(slot) = state.panel_state_tx.lock() {
+                            if let Some(tx) = slot.as_ref() {
+                                let _ = tx.send(PanelState {
+                                    state: "local_wizard_options".into(),
+                                    message: String::new(),
+                                    detail: serde_json::to_string(&opts).ok(),
+                                });
+                            }
+                        }
+                    }
+                } else if msg_type == "local_setup_apply" {
+                    // Panel submitted wizard choices; save + check readiness
+                    log::info!("IPC: local_setup_apply");
+                    let raw = msg["data"].as_str().unwrap_or("{}");
+                    let choices: LocalChoices = match serde_json::from_str(raw) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            log::error!("Invalid local_setup_apply payload: {e}");
+                            return;
+                        }
+                    };
+                    let preset = LocalPreset {
+                        stt_model: choices.stt.id.clone(),
+                        translator_model: choices.translator.id.clone(),
+                        suggester_model: choices.suggester.id.clone(),
+                        ollama_endpoint: choices
+                            .translator
+                            .endpoint
+                            .clone()
+                            .unwrap_or_else(|| "http://localhost:11434".to_string()),
+                        whisper_binary: choices
+                            .stt
+                            .path
+                            .clone()
+                            .unwrap_or_default(),
+                        whisper_model: choices
+                            .stt
+                            .path
+                            .clone()
+                            .unwrap_or_default(),
+                        last_checked: None,
+                    };
+                    // Persist + apply
+                    let updated = match config_manager_ipc.update_local_preset(&preset) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            log::error!("Failed to save local preset: {e}");
+                            if let Ok(state) = meeting_state_ipc.lock() {
+                                if let Ok(slot) = state.panel_state_tx.lock() {
+                                    if let Some(tx) = slot.as_ref() {
+                                        let _ = tx.send(PanelState {
+                                            state: "error".into(),
+                                            message: "Failed to save local preset".into(),
+                                            detail: Some(e.to_string()),
+                                        });
+                                    }
+                                }
+                            }
+                            return;
+                        }
+                    };
+                    // Update in-memory cache
+                    if let Ok(mut slot) = realtime_cfg_ipc.lock() {
+                        *slot = Some(updated.clone());
+                    }
+                    // Fire readiness check (non-blocking) — extract sender before spawn
+                    // to avoid capturing the non-Send MeetingState in the async future.
+                    let pstx = (|| -> Option<tokio::sync::mpsc::UnboundedSender<PanelState>> {
+                        let state_guard = meeting_state_ipc.lock().ok()?;
+                        let slot_guard = state_guard.panel_state_tx.lock().ok()?;
+                        slot_guard.as_ref().cloned()
+                    })();
+                    tokio::spawn(async move {
+                        let readiness = check_local_readiness(&updated).await;
+                        let summary = match (&readiness.ollama, &readiness.whisper) {
+                            (ProviderStatus::Ready { .. }, ProviderStatus::Ready { .. }) => {
+                                "local_ready".to_string()
+                            }
+                            _ => "local_partial".to_string(),
+                        };
+                        if let Some(tx) = pstx {
+                            let _ = tx.send(PanelState {
+                                state: summary,
+                                message: String::new(),
+                                detail: serde_json::to_string(&readiness).ok(),
+                            });
+                        }
+                    });
                 } else if msg_type == "config_update" {
                     // Panel submitted new API key(s); persist to config.json
                     log::info!("Config update received from panel");
