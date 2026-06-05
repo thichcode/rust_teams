@@ -67,6 +67,14 @@ cargo run --release
 
 ---
 
+## 📸 Screenshots
+
+<p align="center">
+  <i>Add your own screenshots here! See comments in README.md for instructions.</i>
+</p>
+
+---
+
 ## ⚙️ Features
 
 ### Core
@@ -91,6 +99,15 @@ cargo run --release
 - 🔄 **Hybrid Providers** — Mix local + cloud per pipeline role
 - ⚙️ **3-Step Wizard** — Pick models for STT, translator, suggester
 - ✅ **Readiness Check** — Verifies Ollama + Whisper availability
+
+### Realtime Translate
+
+- 🟢🔴 **Manual On/Off Toggle** — Start/stop translate anytime, independent of meetings
+- 🎤 **WASAPI Loopback** — Captures system audio from any app (Teams, Zoom, Discord, etc.)
+- 🔄 **STT → Translate → Suggestions** — Real-time pipeline with local or cloud providers
+- ⚙️ **In-Panel Configure** — Set API keys directly from the panel
+- 🖥 **Local Mode** — whisper.cpp + Ollama for fully offline translation
+- 📥 **Auto-Download** — Whisper model downloaded automatically on first use
 
 ### Privacy & Control
 
@@ -192,6 +209,7 @@ rust_teams/
 │   │   ├── pipeline.rs     # STT → Translate → Suggest pipeline
 │   │   ├── audio.rs        # Audio capture (cpal + WASAPI loopback)
 │   │   ├── loopback.rs     # WASAPI loopback capture
+│   │   ├── whisper_download.rs # Auto-download whisper.cpp binary + model
 │   │   ├── translate.rs    # Translation providers
 │   │   └── notes.rs        # Meeting notes
 │   └── ui/
@@ -239,6 +257,9 @@ See [docs/MEMORY.md](docs/MEMORY.md) for full reference.
 | **Language** | Rust |
 | **Window Manager** | [tao](https://github.com/tauri-apps/tao) |
 | **WebView** | [wry](https://github.com/tauri-apps/wry) + WebView2 |
+| **Audio Capture** | cpal + WASAPI loopback |
+| **Local STT** | whisper.cpp (subprocess) |
+| **Local LLM** | [Ollama](https://ollama.com) |
 | **Config** | serde + serde_json |
 | **Error Handling** | anyhow + thiserror |
 | **Logging** | env_logger |
