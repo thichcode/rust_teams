@@ -357,7 +357,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
                     if let Ok(state) = meeting_state_ipc.lock() {
                         if active && !state.is_meeting_active.load(Ordering::Relaxed) {
-                            // Meeting started - start recording
+                            // Meeting started - start recording for notes only
                             state.is_meeting_active.store(true, Ordering::Relaxed);
                             if let Ok(mut generator) = state.generator.lock() {
                                 if let Some(ref mut recorder) = *generator {
@@ -368,103 +368,17 @@ fn main() -> Result<(), Box<dyn Error>> {
                                     }
                                 }
                             }
-
-                            // Start realtime translate pipeline (only if enabled)
-                            if let Ok(rt_cfg_lock) = realtime_cfg_ipc.lock() {
-                                if let Some(cfg) = rt_cfg_lock.as_ref() {
-                                    if cfg.enabled {
-                                        // Pre-flight: check API key
-                                        if let Err(err) = check_realtime_prereq(cfg) {
-                                            log::error!("[Realtime] Pre-flight failed: {}", err);
-                                            if let Ok(slot) = state.panel_state_tx.lock() {
-                                                if let Some(tx) = slot.as_ref() {
-                                                    let _ = tx.send(PanelState {
-                                                        state: "no_api_key".into(),
-                                                        message: err.clone(),
-                                                        detail: None,
-                                                    });
-                                                }
-                                            }
-                                        } else {
-                                            let (tx, rx) =
-                                                tokio::sync::mpsc::unbounded_channel::<RealtimePayload>();
-                                            let pipeline = RealtimeTranslatePipeline::new(
-                                                cfg.clone(),
-                                                tx,
-                                            );
-                                            match pipeline.start() {
-                                                Ok(()) => {
-                                                    if let Ok(mut slot) = state.realtime_pipeline.lock() {
-                                                        *slot = Some(pipeline);
-                                                    }
-                                                    if let Ok(mut slot) = state.realtime_rx.lock() {
-                                                        *slot = Some(rx);
-                                                    }
-                                                    if let Ok(slot) = state.panel_state_tx.lock() {
-                                                        if let Some(tx) = slot.as_ref() {
-                                                            let _ = tx.send(PanelState {
-                                                                state: "listening".into(),
-                                                                message: format!(
-                                                                    "Listening · {} → {}",
-                                                                    cfg.source_lang, cfg.target_lang
-                                                                ),
-                                                                detail: None,
-                                                            });
-                                                        }
-                                                    }
-                                                    log::info!(
-                                                        "Realtime translate started: {} -> {}",
-                                                        cfg.source_lang, cfg.target_lang
-                                                    );
-                                                }
-                                                Err(e) => {
-                                                    log::error!("Failed to start pipeline: {}", e);
-                                                    if let Ok(slot) = state.panel_state_tx.lock() {
-                                                        if let Some(tx) = slot.as_ref() {
-                                                            let _ = tx.send(PanelState {
-                                                                state: "error".into(),
-                                                                message: "Failed to start audio capture".into(),
-                                                                detail: Some(e.to_string()),
-                                                            });
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
                         } else if !active && state.is_meeting_active.load(Ordering::Relaxed) {
                             // Meeting ended - log it
                             state.is_meeting_active.store(false, Ordering::Relaxed);
                             log::info!("Meeting ended");
                             eprintln!("📝 Meeting ended - generating notes...");
-
-                            // Stop realtime translate pipeline
-                            if let Ok(mut slot) = state.realtime_pipeline.lock() {
-                                if let Some(p) = slot.as_ref() {
-                                    p.stop();
-                                }
-                                *slot = None;
-                            }
-                            if let Ok(mut slot) = state.realtime_rx.lock() {
-                                *slot = None;
-                            }
-                            if let Ok(slot) = state.panel_state_tx.lock() {
-                                if let Some(tx) = slot.as_ref() {
-                                    let _ = tx.send(PanelState {
-                                        state: "stopped".into(),
-                                        message: "Meeting ended".into(),
-                                        detail: None,
-                                    });
-                                }
-                            }
                         }
                     }
-                } else if msg_type == "realtime_toggle" {
+                } else if msg_type == "manual_toggle" {
                     // Manual start/stop from the panel button
                     let enable = msg["data"]["enabled"].as_bool().unwrap_or(false);
-                    log::info!("Realtime toggle: enabled={}", enable);
+                    log::info!("Manual toggle: enabled={}", enable);
                     if let Ok(state) = meeting_state_ipc.lock() {
                         if enable {
                             if let Ok(rt_cfg_lock) = realtime_cfg_ipc.lock() {
@@ -495,13 +409,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                                                 if let Ok(mut slot) = state.realtime_rx.lock() {
                                                     *slot = Some(rx);
                                                 }
-                                                state.is_meeting_active.store(true, Ordering::Relaxed);
                                                 if let Ok(slot) = state.panel_state_tx.lock() {
                                                     if let Some(tx) = slot.as_ref() {
                                                         let _ = tx.send(PanelState {
                                                             state: "listening".into(),
                                                             message: format!(
-                                                                "Listening (manual) · {} → {}",
+                                                                "Listening (loopback) · {} → {}",
                                                                 cfg.source_lang, cfg.target_lang
                                                             ),
                                                             detail: None,
@@ -527,7 +440,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                             }
                         } else {
                             // Stop
-                            state.is_meeting_active.store(false, Ordering::Relaxed);
                             if let Ok(mut slot) = state.realtime_pipeline.lock() {
                                 if let Some(p) = slot.as_ref() {
                                     p.stop();

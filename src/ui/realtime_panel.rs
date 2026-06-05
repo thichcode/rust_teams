@@ -158,6 +158,19 @@ pub fn get_realtime_panel_script() -> String {
                 #${PANEL_ID} .rt-action-btn:hover {
                     background: rgba(98,100,167,0.45);
                 }
+                #${PANEL_ID} #rt-toggle-listen {
+                    font-weight: 600;
+                    font-size: 12px;
+                    transition: background .2s, border-color .2s;
+                }
+                #${PANEL_ID} #rt-toggle-listen[data-listening="1"] {
+                    background: rgba(29,111,29,0.4);
+                    border-color: rgba(29,185,29,0.6);
+                }
+                #${PANEL_ID} #rt-toggle-listen[data-listening="0"] {
+                    background: rgba(168,122,0,0.25);
+                    border-color: rgba(168,122,0,0.4);
+                }
                 #rt-config-modal {
                     position: fixed;
                     top: 0; left: 0; right: 0; bottom: 0;
@@ -381,7 +394,7 @@ pub fn get_realtime_panel_script() -> String {
                 <div class="rt-status">Initializing…</div>
                 <div class="rt-error-detail" style="display:none"></div>
                 <div class="rt-actions">
-                    <button class="rt-action-btn" id="rt-toggle-listen">Start listening</button>
+                    <button class="rt-action-btn" id="rt-toggle-listen" data-listening="0">🔴 Off</button>
                     <button class="rt-action-btn" id="rt-configure">⚙ Configure</button>
                     <button class="rt-action-btn" id="rt-local-mode">🖥 Local</button>
                 </div>
@@ -428,8 +441,19 @@ pub fn get_realtime_panel_script() -> String {
                 }
             });
 
-            // Close
+            // Close - stop pipeline if running
             panel.querySelector('#rt-close').addEventListener('click', () => {
+                const btn = panel.querySelector('#rt-toggle-listen');
+                if (btn && btn.dataset.listening === '1') {
+                    if (window.ipc && window.ipc.postMessage) {
+                        window.ipc.postMessage(JSON.stringify({
+                            type: 'manual_toggle',
+                            data: { enabled: false }
+                        }));
+                    }
+                    btn.dataset.listening = '0';
+                    btn.textContent = '🔴 Off';
+                }
                 panel.classList.remove('visible');
             });
 
@@ -440,21 +464,21 @@ pub fn get_realtime_panel_script() -> String {
                 if (isListening) {
                     if (window.ipc && window.ipc.postMessage) {
                         window.ipc.postMessage(JSON.stringify({
-                            type: 'realtime_toggle',
+                            type: 'manual_toggle',
                             data: { enabled: false }
                         }));
                     }
                     btn.dataset.listening = '0';
-                    btn.textContent = 'Start listening';
+                    btn.textContent = '🔴 Off';
                 } else {
                     if (window.ipc && window.ipc.postMessage) {
                         window.ipc.postMessage(JSON.stringify({
-                            type: 'realtime_toggle',
+                            type: 'manual_toggle',
                             data: { enabled: true }
                         }));
                     }
                     btn.dataset.listening = '1';
-                    btn.textContent = 'Stop listening';
+                    btn.textContent = '🟢 On';
                 }
             });
 
@@ -694,7 +718,7 @@ pub fn get_realtime_panel_script() -> String {
                     status.textContent = message || 'Listening for call audio…';
                     if (toggleBtn) {
                         toggleBtn.dataset.listening = '1';
-                        toggleBtn.textContent = 'Stop listening';
+                        toggleBtn.textContent = '🟢 On';
                     }
                     break;
                 case 'error':
@@ -707,7 +731,7 @@ pub fn get_realtime_panel_script() -> String {
                     }
                     if (toggleBtn) {
                         toggleBtn.dataset.listening = '0';
-                        toggleBtn.textContent = 'Retry';
+                        toggleBtn.textContent = '🔴 Off';
                     }
                     break;
                 case 'no_api_key':
@@ -715,10 +739,10 @@ pub fn get_realtime_panel_script() -> String {
                     status.classList.add('error');
                     status.textContent = '⚠ OpenAI API key not configured';
                     errBox.style.display = '';
-                    errBox.textContent = detail || 'Edit config.toml at %APPDATA%\\rust_teams\\config.toml → [realtime_translate.stt] api_key = "sk-..." and set api_key for [realtime_translate.translator] + [realtime_translate.suggester] as well.';
+                    errBox.textContent = detail || 'No API keys configured. Click ⚙ Configure to set keys, or use 🖥 Local for offline mode.';
                     if (toggleBtn) {
                         toggleBtn.dataset.listening = '0';
-                        toggleBtn.textContent = 'Start listening';
+                        toggleBtn.textContent = '🔴 Off';
                     }
                     break;
                 case 'no_mic':
@@ -726,25 +750,25 @@ pub fn get_realtime_panel_script() -> String {
                     status.classList.add('error');
                     status.textContent = '⚠ No microphone or loopback device';
                     errBox.style.display = '';
-                    errBox.textContent = detail || 'No audio input device available. Connect a microphone or enable Stereo Mix in Windows sound settings.';
+                    errBox.textContent = detail || 'No audio loopback device available. Check Windows sound settings — Stereo Mix or loopback should be enabled.';
                     if (toggleBtn) {
                         toggleBtn.dataset.listening = '0';
-                        toggleBtn.textContent = 'Start listening';
+                        toggleBtn.textContent = '🔴 Off';
                     }
                     break;
                 case 'stopped':
                     status.textContent = message || 'Stopped';
                     if (toggleBtn) {
                         toggleBtn.dataset.listening = '0';
-                        toggleBtn.textContent = 'Start listening';
+                        toggleBtn.textContent = '🔴 Off';
                     }
                     break;
                 case 'idle':
                 default:
-                    status.textContent = message || 'Waiting for a Teams call to start…';
+                    status.textContent = message || 'Click 🟢 On to start translating';
                     if (toggleBtn) {
                         toggleBtn.dataset.listening = '0';
-                        toggleBtn.textContent = 'Start listening';
+                        toggleBtn.textContent = '🔴 Off';
                     }
                     break;
             }
@@ -792,7 +816,7 @@ pub fn get_realtime_panel_script() -> String {
                 }
                 const panel = ensurePanel();
                 panel.classList.add('visible');
-                renderState(panel, 'idle', 'Realtime translate ready. Join a Teams call to start.', null);
+                renderState(panel, 'idle', 'Realtime translate ready. Click 🟢 On to start.', null);
                 console.log('[RealtimePanel] Mounted and visible');
             } catch (err) {
                 console.error('[RealtimePanel] init error:', err);
