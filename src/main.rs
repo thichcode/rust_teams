@@ -2,6 +2,7 @@
 //! Features: Auto-update, Memory Optimization, Badge Notifications, URL Interception, Meeting Notes, Realtime Translate
 
 mod app;
+mod bot;
 mod config;
 mod error;
 mod meeting;
@@ -33,6 +34,8 @@ use ui::console::auto_hide_console;
 use ui::meeting_detect::get_meeting_detection_script;
 use ui::performance::get_all_optimization_scripts;
 use ui::realtime_panel::get_realtime_panel_script;
+use ui::command_bar::get_command_bar_script;
+use bot::{CommandRegistry, parse_command};
 
 /// Shared state for meeting notes
 struct MeetingState {
@@ -46,6 +49,10 @@ struct MeetingState {
     panel_state_tx: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedSender<PanelState>>>>,
     /// Receiver for panel state changes; the event loop drains this and injects JS
     panel_state_rx: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<PanelState>>>>,
+    /// Sender for bot command responses
+    bot_response_tx: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedSender<BotResponse>>>>,
+    /// Receiver for bot command responses; the event loop drains this and injects JS
+    bot_response_rx: Arc<Mutex<Option<tokio::sync::mpsc::UnboundedReceiver<BotResponse>>>>,
     /// Reference to the WebView (wrapped in Arc because WebView is not Clone)
     /// so we can inject translated captions as JS
     webview: Arc<Mutex<Option<Arc<WebView>>>>,
@@ -54,6 +61,7 @@ struct MeetingState {
 impl MeetingState {
     fn new(config: MeetingNotesConfig) -> Self {
         let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<PanelState>();
+        let (bot_tx, bot_rx) = tokio::sync::mpsc::unbounded_channel::<BotResponse>();
         Self {
             is_meeting_active: Arc::new(AtomicBool::new(false)),
             generator: Arc::new(Mutex::new(
@@ -63,6 +71,8 @@ impl MeetingState {
             realtime_rx: Arc::new(Mutex::new(None)),
             panel_state_tx: Arc::new(Mutex::new(Some(tx))),
             panel_state_rx: Arc::new(Mutex::new(Some(rx))),
+            bot_response_tx: Arc::new(Mutex::new(Some(bot_tx))),
+            bot_response_rx: Arc::new(Mutex::new(Some(bot_rx))),
             webview: Arc::new(Mutex::new(None)),
         }
     }
@@ -74,6 +84,12 @@ struct PanelState {
     state: String, // "listening" | "error" | "no_api_key" | "no_mic" | "stopped" | "idle"
     message: String,
     detail: Option<String>,
+}
+
+/// Bot command response pushed to the UI
+#[derive(Debug, Clone)]
+struct BotResponse {
+    output: String,
 }
 
 /// Pre-flight check: verify API key + audio device before starting the pipeline.
@@ -258,6 +274,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let perf_js = get_all_optimization_scripts();
     let meeting_js = get_meeting_detection_script();
     let realtime_panel_js = get_realtime_panel_script();
+    let command_bar_js = get_command_bar_script();
 
     // Build Chromium / WebView2 browser flags từ memory config
     let browser_args = memory::build_browser_args(&config.memory_optimization);
@@ -273,6 +290,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .with_initialization_script(&perf_js)
         .with_initialization_script(&meeting_js)
         .with_initialization_script(&realtime_panel_js)
+        .with_initialization_script(&command_bar_js)
         .with_document_title_changed_handler(move |title: String| {
             if let Some(count) = parse_unread_count(&title) {
                 let mut current_count = badge_count_clone.lock().unwrap();
@@ -646,6 +664,32 @@ fn main() -> Result<(), Box<dyn Error>> {
                             }
                         }
                     }
+                } else if msg_type == "bot_command" {
+                    // Bot command from floating command bar
+                    let command_str = msg["data"]["command"].as_str().unwrap_or("");
+                    log::info!("Bot command: {}", command_str);
+                    let registry = CommandRegistry::new();
+                    let (cmd, args) = match parse_command(command_str) {
+                        Some((c, a)) => (c, a),
+                        None => ("", ""),
+                    };
+                    let result = if cmd.is_empty() {
+                        // Show all commands
+                        let list: Vec<String> = registry.commands().iter()
+                            .map(|c| format!("/{} — {}", c.name, c.description))
+                            .collect();
+                        bot::commands::CommandResult { output: list.join("\n") }
+                    } else {
+                        registry.execute(cmd, args)
+                    };
+                    // Send response to JS
+                    if let Ok(state) = meeting_state_ipc.lock() {
+                        if let Ok(slot) = state.bot_response_tx.lock() {
+                            if let Some(tx) = slot.as_ref() {
+                                let _ = tx.send(BotResponse { output: result.output });
+                            }
+                        }
+                    }
                 }
             }
         });
@@ -779,6 +823,25 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 );
                                 if let Err(e) = wv.evaluate_script(&js) {
                                     log::warn!("Failed to inject panel state: {}", e);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Drain bot command responses and inject as JS event
+            if let Ok(mut rx_slot) = state.bot_response_rx.lock() {
+                if let Some(rx) = rx_slot.as_mut() {
+                    while let Ok(br) = rx.try_recv() {
+                        if let Ok(wv_slot) = state.webview.lock() {
+                            if let Some(wv) = wv_slot.as_ref() {
+                                let js = format!(
+                                    "window.dispatchEvent(new CustomEvent('rteams-bot-response', {{ detail: {{ output: '{}' }} }}));",
+                                    br.output.replace('\\', "\\\\").replace('\'', "\\'"),
+                                );
+                                if let Err(e) = wv.evaluate_script(&js) {
+                                    log::warn!("Failed to inject bot response: {}", e);
                                 }
                             }
                         }
