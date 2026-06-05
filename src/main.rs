@@ -395,10 +395,54 @@ fn main() -> Result<(), Box<dyn Error>> {
                                             }
                                         }
                                     } else {
+                                        // Auto-download whisper if local STT is selected
+                                        let mut cfg_owned = cfg.clone();
+                                        let stt_type = cfg_owned.stt.provider_type.as_str();
+                                        if stt_type == "local" || stt_type == "whisper-cpp" || stt_type == "whisper.cpp" {
+                                            let data_dir = directories::ProjectDirs::from("com", "rust-teams", "app")
+                                                .map(|p| p.data_dir().to_path_buf())
+                                                .unwrap_or_else(|| std::env::temp_dir().join("rust-teams"));
+                                            let dl = meeting::whisper_download::WhisperDownloader::new(data_dir);
+                                            if dl.needs_download() {
+                                                log::info!("Whisper files missing, downloading...");
+                                                if let Ok(slot) = state.panel_state_tx.lock() {
+                                                    if let Some(tx) = slot.as_ref() {
+                                                        let _ = tx.send(PanelState {
+                                                            state: "listening".into(),
+                                                            message: "Downloading whisper model (~100MB)...".into(),
+                                                            detail: None,
+                                                        });
+                                                    }
+                                                }
+                                                match dl.ensure_downloaded() {
+                                                    Ok(()) => {
+                                                        log::info!("Whisper download complete");
+                                                        // Update config with downloaded paths
+                                                        if dl.bin_path().exists() && dl.model_path().exists() {
+                                                            cfg_owned.stt.api_url = dl.bin_path().to_string_lossy().to_string();
+                                                            cfg_owned.stt.api_key = dl.model_path().to_string_lossy().to_string();
+                                                        }
+                                                    }
+                                                    Err(e) => {
+                                                        log::error!("Whisper download failed: {}", e);
+                                                        if let Ok(slot) = state.panel_state_tx.lock() {
+                                                            if let Some(tx) = slot.as_ref() {
+                                                                let _ = tx.send(PanelState {
+                                                                    state: "error".into(),
+                                                                    message: "Whisper download failed".into(),
+                                                                    detail: Some(e.to_string()),
+                                                                });
+                                                            }
+                                                        }
+                                                        return;
+                                                    }
+                                                }
+                                            }
+                                        }
                                         let (tx, rx) =
                                             tokio::sync::mpsc::unbounded_channel::<RealtimePayload>();
                                         let pipeline = RealtimeTranslatePipeline::new(
-                                            cfg.clone(),
+                                            cfg_owned.clone(),
                                             tx,
                                         );
                                         match pipeline.start() {
@@ -415,7 +459,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                                             state: "listening".into(),
                                                             message: format!(
                                                                 "Listening (loopback) · {} → {}",
-                                                                cfg.source_lang, cfg.target_lang
+                                                                cfg_owned.source_lang, cfg_owned.target_lang
                                                             ),
                                                             detail: None,
                                                         });
