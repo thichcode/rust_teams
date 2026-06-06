@@ -11,7 +11,7 @@ mod ui;
 mod updater;
 
 use std::error::Error;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use tao::event::{Event, StartCause, WindowEvent};
@@ -36,6 +36,14 @@ use ui::performance::get_all_optimization_scripts;
 use ui::realtime_panel::get_realtime_panel_script;
 use ui::command_bar::get_command_bar_script;
 use bot::{CommandRegistry, parse_command};
+
+/// Global cached CommandRegistry — created once on first IPC call, reused for all subsequent commands.
+/// Avoids allocating 9 boxed closures on every bot command.
+static BOT_REGISTRY: OnceLock<CommandRegistry> = OnceLock::new();
+
+fn bot_registry() -> &'static CommandRegistry {
+    BOT_REGISTRY.get_or_init(CommandRegistry::new)
+}
 
 /// Shared state for meeting notes
 struct MeetingState {
@@ -668,7 +676,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     // Bot command from floating command bar
                     let command_str = msg["data"]["command"].as_str().unwrap_or("");
                     log::info!("Bot command: {}", command_str);
-                    let registry = CommandRegistry::new();
+                    let registry = bot_registry();
                     let (cmd, args) = match parse_command(command_str) {
                         Some((c, a)) => (c, a),
                         None => ("", ""),
