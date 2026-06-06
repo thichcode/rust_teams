@@ -2,6 +2,23 @@
 
 All notable changes to R Teams.
 
+## [0.9.0] - 2026-06-05
+
+### Added
+- **Manual On/Off toggle** — translate pipeline runs independently of meetings
+  - "🔴 Off" / "🟢 On" button replaces old "Start listening"
+  - WASAPI loopback captures system audio from any app (Teams, Zoom, Discord, etc.)
+  - Close button stops pipeline when On
+  - Pipeline start/stop is fully manual — no auto-trigger on meeting detection
+- **Auto-download whisper model** — when toggling On with local STT, whisper binary + model are downloaded automatically (~100MB)
+  - Shows "Downloading whisper model..." status during download
+  - Updates config paths after download completes
+- **Floating command bar** — Telegram-style `/` commands in Teams
+  - Position: fixed, top-left corner, opacity 0.4 → focus shows
+  - 9 built-in commands: `/help`, `/status`, `/translate on|off`, `/meeting start|stop`, `/config`, `/clear`, `/time`, `/date`, `/hello`
+  - Dropdown with filter, "thinking..." indicator, result display
+  - Independent of Teams' built-in bot system
+
 ## [0.8.0] - 2026-06-04
 
 ### Added
