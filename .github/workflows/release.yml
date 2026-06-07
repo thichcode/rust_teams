@@ -2,7 +2,8 @@ name: Auto Tag & Release
 
 on:
   push:
-    branches: [main]
+    tags:
+      - 'v*'
 
 env:
   CARGO_TERM_COLOR: always
@@ -33,15 +34,16 @@ jobs:
           echo "Current version: ${VERSION}"
           echo "Tag to check: ${TAG}"
           
-          # Check if tag already exists
-          if git rev-parse "${TAG}" >/dev/null 2>&1; then
-            echo "Tag ${TAG} already exists - skipping release"
-            echo "should_release=false" >> $GITHUB_OUTPUT
-          else
-            echo "Tag ${TAG} does not exist - will create release"
+          # Verify tag matches Cargo.toml version (triggered by tag push)
+          PUSHED_TAG="${GITHUB_REF#refs/tags/}"
+          if [ "${PUSHED_TAG}" = "${TAG}" ]; then
+            echo "Tag matches version - proceeding with release"
             echo "tag_name=${TAG}" >> $GITHUB_OUTPUT
             echo "version=${VERSION}" >> $GITHUB_OUTPUT
             echo "should_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "Pushed tag ${PUSHED_TAG} doesn't match Cargo.toml version ${TAG} - skipping"
+            echo "should_release=false" >> $GITHUB_OUTPUT
           fi
 
   build:
@@ -215,14 +217,6 @@ jobs:
             echo "$NOTES"
             echo "EOF"
           } >> $GITHUB_OUTPUT
-
-      - name: Create tag
-        run: |
-          TAG="${{ needs.check.outputs.tag_name }}"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "${TAG}"
-          git push origin "${TAG}"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
