@@ -60,6 +60,9 @@ pub struct MeetingAssistantApp {
     is_downloading: bool,
     download_rx: mpsc::Receiver<String>,
     download_tx: mpsc::Sender<String>,
+
+    start_time: Option<std::time::Instant>,
+    last_auto_save: std::time::Instant,
 }
 
 impl MeetingAssistantApp {
@@ -90,6 +93,8 @@ impl MeetingAssistantApp {
             is_downloading: false,
             download_rx: drx,
             download_tx: dtx,
+            start_time: None,
+            last_auto_save: std::time::Instant::now(),
         }
     }
 
@@ -105,6 +110,8 @@ impl MeetingAssistantApp {
 
         self.status_message = "Starting...".to_string();
         self.is_recording = true;
+        self.start_time = Some(std::time::Instant::now());
+        self.last_auto_save = std::time::Instant::now();
         let (stop_tx, stop_rx) = mpsc::channel();
         self.stop_tx = Some(stop_tx);
         let running = Arc::new(AtomicBool::new(true));
@@ -225,6 +232,7 @@ impl MeetingAssistantApp {
             let _ = h.join();
         }
         self.is_recording = false;
+        self.start_time = None;
         self.status_message = "Stopped".to_string();
     }
 
@@ -374,8 +382,35 @@ impl eframe::App for MeetingAssistantApp {
             });
         });
 
+        if self.is_recording && self.start_time.is_some() {
+            if self.last_auto_save.elapsed() >= std::time::Duration::from_secs(300) {
+                if !self.transcript_history.is_empty() {
+                    if let Ok(path) = save_transcript(
+                        &self.transcript_history,
+                        &self.config.notes_dir,
+                    ) {
+                        self.saved_notes.push(path.clone());
+                        self.status_message = format!(
+                            "Auto-saved: {}",
+                            path.file_name().unwrap().to_string_lossy()
+                        );
+                    }
+                }
+                self.last_auto_save = std::time::Instant::now();
+            }
+        }
+
         egui::TopBottomPanel::bottom("controls").show(ctx, |ui| {
             ui.horizontal(|ui| {
+                if self.is_recording {
+                    if let Some(start) = self.start_time {
+                        let elapsed = start.elapsed();
+                        let mins = elapsed.as_secs() / 60;
+                        let secs = elapsed.as_secs() % 60;
+                        ui.label(format!("{:02}:{:02}", mins, secs));
+                    }
+                }
+
                 let btn_label = if self.is_recording { "Stop" } else { "Start" };
                 if ui.button(btn_label).clicked() {
                     if self.is_recording {
