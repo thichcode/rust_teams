@@ -4,13 +4,20 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::audio::AudioCapture;
 use crate::config::Config;
-use crate::notes::save_transcript;
+use crate::notes::{list_notes, save_transcript, spawn_summarize};
 use crate::stt::LocalWhisper;
 use crate::stt::SttProvider;
 use crate::suggest::OllamaSuggester;
 use crate::suggest::Suggester;
 use crate::translate::OllamaTranslator;
 use crate::translate::Translator;
+
+#[derive(Clone, PartialEq)]
+enum RightTab {
+    Translation,
+    Suggestions,
+    Notes,
+}
 
 #[derive(Clone)]
 pub struct RealtimePayload {
@@ -38,11 +45,18 @@ pub struct MeetingAssistantApp {
 
     saved_notes: Vec<std::path::PathBuf>,
     show_config: bool,
+    right_tab: RightTab,
+
+    summary_text: String,
+    summary_generating: bool,
+    summary_rx: mpsc::Receiver<String>,
+    summary_tx: mpsc::Sender<String>,
 }
 
 impl MeetingAssistantApp {
     pub fn new(_cc: &eframe::CreationContext<'_>, config: Config) -> Self {
         let (tx, rx) = mpsc::channel();
+        let (stx, srx) = mpsc::channel();
         Self {
             status_message: "Ready".to_string(),
             config,
@@ -58,16 +72,21 @@ impl MeetingAssistantApp {
             current_suggestions: Vec::new(),
             saved_notes: Vec::new(),
             show_config: false,
+            right_tab: RightTab::Translation,
+            summary_text: String::new(),
+            summary_generating: false,
+            summary_rx: srx,
+            summary_tx: stx,
         }
     }
 
     pub fn start_pipeline(&mut self) {
         if self.config.whisper_binary.is_empty() || self.config.whisper_model.is_empty() {
-            self.status_message = "❌ Configure whisper paths first".to_string();
+            self.status_message = "Set whisper paths in Settings first".to_string();
             return;
         }
         if !std::path::Path::new(&self.config.whisper_binary).exists() {
-            self.status_message = format!("❌ Not found: {}", self.config.whisper_binary);
+            self.status_message = format!("Not found: {}", self.config.whisper_binary);
             return;
         }
 
@@ -142,10 +161,10 @@ impl MeetingAssistantApp {
         match handle {
             Ok(h) => {
                 self.audio_thread = Some(h);
-                self.status_message = "● Listening".to_string();
+                self.status_message = "Listening".to_string();
             }
             Err(e) => {
-                self.status_message = format!("❌ Thread error: {e}");
+                self.status_message = format!("Thread error: {e}");
                 self.is_recording = false;
             }
         }
@@ -177,11 +196,17 @@ impl eframe::App for MeetingAssistantApp {
             }
         }
 
+        while let Ok(summary) = self.summary_rx.try_recv() {
+            self.summary_text = summary;
+            self.summary_generating = false;
+            self.status_message = "Summary ready".to_string();
+        }
+
         egui::TopBottomPanel::top("title_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.heading("⚡ R Teams Meeting Assistant");
+                ui.heading("R Teams Meeting Assistant");
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("⚙ Settings").clicked() {
+                    if ui.button("Settings").clicked() {
                         self.show_config = !self.show_config;
                     }
                 });
@@ -211,31 +236,47 @@ impl eframe::App for MeetingAssistantApp {
                         });
                 });
 
+                ui.separator();
                 ui.vertical(|ui| {
-                    ui.label(egui::RichText::new("TRANSLATION").strong().size(14.0));
-                    egui::ScrollArea::vertical()
-                        .id_salt("translation")
-                        .max_height(avail.y - 200.0)
-                        .show(ui, |ui| {
-                            ui.label(&self.current_translation);
-                        });
-
-                    ui.separator();
-                    ui.label(egui::RichText::new("SUGGESTIONS").strong().size(14.0));
                     ui.horizontal(|ui| {
-                        for s in &self.current_suggestions {
-                            if ui.button(s).clicked() {
-                                // TODO: copy to clipboard phase 2
+                        let tabs = [("Translate", RightTab::Translation),
+                                    ("Suggest", RightTab::Suggestions),
+                                    ("Notes", RightTab::Notes)];
+                        for (label, tab) in tabs {
+                            let selected = self.right_tab == tab;
+                            if ui.selectable_label(selected, label).clicked() {
+                                if tab == RightTab::Notes {
+                                    self.saved_notes = list_notes(&self.config.notes_dir);
+                                }
+                                self.right_tab = tab;
                             }
                         }
                     });
+
+                    ui.separator();
+                    match self.right_tab {
+                        RightTab::Translation => {
+                            egui::ScrollArea::vertical()
+                                .id_salt("translation")
+                                .max_height(avail.y - 200.0)
+                                .show(ui, |ui| {
+                                    ui.label(&self.current_translation);
+                                });
+                        }
+                        RightTab::Suggestions => {
+                            suggestions_tab(ui, &self.current_suggestions, ctx);
+                        }
+                        RightTab::Notes => {
+                            notes_tab(ui, self);
+                        }
+                    }
                 });
             });
         });
 
         egui::TopBottomPanel::bottom("controls").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                let btn_label = if self.is_recording { "🔴 Stop" } else { "🟢 Start" };
+                let btn_label = if self.is_recording { "Stop" } else { "Start" };
                 if ui.button(btn_label).clicked() {
                     if self.is_recording {
                         self.stop_pipeline();
@@ -244,7 +285,7 @@ impl eframe::App for MeetingAssistantApp {
                     }
                 }
 
-                if ui.button("📝 Save Transcript").clicked() {
+                if ui.button("Save Transcript").clicked() {
                     if !self.transcript_history.is_empty() {
                         if let Ok(path) = save_transcript(
                             &self.transcript_history,
@@ -264,6 +305,94 @@ impl eframe::App for MeetingAssistantApp {
         });
 
         ctx.request_repaint();
+    }
+}
+
+fn suggestions_tab(ui: &mut egui::Ui, suggestions: &[String], ctx: &egui::Context) {
+    ui.label(egui::RichText::new("REPLY SUGGESTIONS").strong().size(14.0));
+    if suggestions.is_empty() {
+        ui.label("(waiting for input...)");
+        return;
+    }
+    egui::ScrollArea::vertical()
+        .id_salt("suggestions")
+        .max_height(ui.available_height() - 10.0)
+        .show(ui, |ui| {
+            for s in suggestions {
+                ui.horizontal(|ui| {
+                    if ui.button("Copy").clicked() {
+                        ctx.copy_text(s.clone());
+                    }
+                    ui.label(s);
+                });
+            }
+        });
+}
+
+fn notes_tab(ui: &mut egui::Ui, app: &mut MeetingAssistantApp) {
+    ui.label(egui::RichText::new("SAVED NOTES").strong().size(14.0));
+    ui.horizontal(|ui| {
+        if ui.button("Refresh").clicked() {
+            app.saved_notes = list_notes(&app.config.notes_dir);
+        }
+        if ui.button("Open Folder").clicked() {
+            let dir = &app.config.notes_dir;
+            let _ = std::process::Command::new("explorer")
+                .arg(dir)
+                .spawn();
+        }
+    });
+
+    ui.separator();
+    egui::ScrollArea::vertical()
+        .id_salt("notes-list")
+        .max_height(ui.available_height() * 0.4)
+        .show(ui, |ui| {
+            if app.saved_notes.is_empty() {
+                ui.label("(no notes saved yet)");
+            }
+            for path in &app.saved_notes {
+                ui.horizontal(|ui| {
+                    let name = path.file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_default();
+                    if ui.button("Open").clicked() {
+                        let _ = std::process::Command::new("cmd")
+                            .args(["/c", "start", "", &path.to_string_lossy()])
+                            .spawn();
+                    }
+                    ui.label(name);
+                });
+            }
+        });
+
+    ui.separator();
+    ui.label(egui::RichText::new("SUMMARY").strong().size(14.0));
+    if app.summary_generating {
+        ui.label("Generating...");
+    } else if ui.button("Generate Summary").clicked() {
+        if app.transcript_history.is_empty() {
+            app.status_message = "No transcript to summarize".to_string();
+        } else {
+            app.summary_generating = true;
+            app.summary_text.clear();
+            app.status_message = "Generating summary...".to_string();
+            let th = app.transcript_history.clone();
+            let ep = app.config.ollama_endpoint.clone();
+            let model = app.config.suggester_model.clone();
+            let tx = app.summary_tx.clone();
+            std::thread::spawn(move || {
+                spawn_summarize(th, &ep, &model, &tx);
+            });
+        }
+    }
+    if !app.summary_text.is_empty() {
+        egui::ScrollArea::vertical()
+            .id_salt("summary")
+            .max_height(ui.available_height() - 10.0)
+            .show(ui, |ui| {
+                ui.label(&app.summary_text);
+            });
     }
 }
 
@@ -296,7 +425,7 @@ impl MeetingAssistantApp {
         ui.label("Notes Directory:");
         ui.text_edit_singleline(&mut self.config.notes_dir);
 
-        if ui.button("💾 Save & Back").clicked() {
+        if ui.button("Save & Back").clicked() {
             self.config.save();
             self.show_config = false;
         }
