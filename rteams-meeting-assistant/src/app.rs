@@ -1,9 +1,12 @@
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use crate::audio::AudioCapture;
 use crate::config::Config;
+use crate::diarize::Diarizer;
+use crate::download::WhisperDownloader;
 use crate::notes::{list_notes, save_transcript, spawn_summarize};
 use crate::stt::LocalWhisper;
 use crate::stt::SttProvider;
@@ -11,6 +14,7 @@ use crate::suggest::OllamaSuggester;
 use crate::suggest::Suggester;
 use crate::translate::OllamaTranslator;
 use crate::translate::Translator;
+use crate::vad::Vad;
 
 #[derive(Clone, PartialEq)]
 enum RightTab {
@@ -21,6 +25,7 @@ enum RightTab {
 
 #[derive(Clone)]
 pub struct RealtimePayload {
+    pub speaker_label: String,
     pub source_text: String,
     pub translated_text: String,
     pub suggestions: Vec<String>,
@@ -51,12 +56,17 @@ pub struct MeetingAssistantApp {
     summary_generating: bool,
     summary_rx: mpsc::Receiver<String>,
     summary_tx: mpsc::Sender<String>,
+
+    is_downloading: bool,
+    download_rx: mpsc::Receiver<String>,
+    download_tx: mpsc::Sender<String>,
 }
 
 impl MeetingAssistantApp {
     pub fn new(_cc: &eframe::CreationContext<'_>, config: Config) -> Self {
         let (tx, rx) = mpsc::channel();
         let (stx, srx) = mpsc::channel();
+        let (dtx, drx) = mpsc::channel();
         Self {
             status_message: "Ready".to_string(),
             config,
@@ -77,6 +87,9 @@ impl MeetingAssistantApp {
             summary_generating: false,
             summary_rx: srx,
             summary_tx: stx,
+            is_downloading: false,
+            download_rx: drx,
+            download_tx: dtx,
         }
     }
 
@@ -108,51 +121,83 @@ impl MeetingAssistantApp {
                     log::error!("audio start: {e}");
                     return;
                 }
+
                 let stt = LocalWhisper::new(&cfg.whisper_binary, &cfg.whisper_model);
                 let translator =
                     OllamaTranslator::new(&cfg.ollama_endpoint, &cfg.translator_model);
                 let suggester =
                     OllamaSuggester::new(&cfg.ollama_endpoint, &cfg.suggester_model);
+                let mut vad = Vad::new();
+                let mut diarizer = Diarizer::new();
                 let mut rolling: Vec<String> = Vec::new();
+
+                let mut utterance: Vec<f32> = Vec::new();
+                let mut silence_frames: u32 = 0;
+                const SILENCE_TIMEOUT: u32 = 15;
 
                 while running.load(Ordering::Relaxed) {
                     if stop_rx.try_recv().is_ok() {
                         break;
                     }
-                    std::thread::sleep(std::time::Duration::from_millis(5000));
+                    std::thread::sleep(Duration::from_millis(100));
                     if !running.load(Ordering::Relaxed) {
                         break;
                     }
+
                     let samples = audio.drain_buffer();
-                    let needed = 16000 * 3;
-                    if samples.len() < needed {
+                    if samples.is_empty() {
                         continue;
                     }
 
-                    let result = rt.block_on(async {
-                        let text = stt.transcribe(&samples, &cfg.source_lang).await?;
-                        let translated = translator
-                            .translate(&text, &cfg.source_lang, &cfg.target_lang)
-                            .await
-                            .unwrap_or_default();
-                        let ctx = rolling.join("\n");
-                        let suggestions = suggester
-                            .suggest(&ctx, &text, &cfg.target_lang, 3)
-                            .await
-                            .unwrap_or_default();
-                        rolling.push(text.clone());
-                        if rolling.len() > 10 {
-                            rolling.remove(0);
+                    let mut offset = 0;
+                    while offset + 480 <= samples.len() {
+                        let frame = &samples[offset..offset + 480];
+                        offset += 480;
+                        if vad.is_voice(frame) {
+                            utterance.extend_from_slice(frame);
+                            silence_frames = 0;
+                        } else {
+                            silence_frames += 1;
                         }
-                        Ok::<_, anyhow::Error>((text, translated, suggestions))
-                    });
+                    }
 
-                    if let Ok((text, translated, suggestions)) = result {
-                        let _ = tx.send(RealtimePayload {
-                            source_text: text,
-                            translated_text: translated,
-                            suggestions,
-                        });
+                    if silence_frames >= SILENCE_TIMEOUT && !utterance.is_empty() {
+                        if utterance.len() >= 16000 {
+                            let speaker = diarizer.next_utterance();
+                            let samples_to_process = utterance.clone();
+                            utterance.clear();
+
+                            let result = rt.block_on(async {
+                                let text = stt
+                                    .transcribe(&samples_to_process, &cfg.source_lang)
+                                    .await?;
+                                let translated = translator
+                                    .translate(&text, &cfg.source_lang, &cfg.target_lang)
+                                    .await
+                                    .unwrap_or_default();
+                                let ctx = rolling.join("\n");
+                                let suggestions = suggester
+                                    .suggest(&ctx, &text, &cfg.target_lang, 3)
+                                    .await
+                                    .unwrap_or_default();
+                                rolling.push(text.clone());
+                                if rolling.len() > 10 {
+                                    rolling.remove(0);
+                                }
+                                Ok::<_, anyhow::Error>((text, translated, suggestions))
+                            });
+
+                            if let Ok((text, translated, suggestions)) = result {
+                                let _ = tx.send(RealtimePayload {
+                                    speaker_label: speaker,
+                                    source_text: text,
+                                    translated_text: translated,
+                                    suggestions,
+                                });
+                            }
+                        } else {
+                            utterance.clear();
+                        }
                     }
                 }
                 let _ = audio.stop();
@@ -182,6 +227,27 @@ impl MeetingAssistantApp {
         self.is_recording = false;
         self.status_message = "Stopped".to_string();
     }
+
+    fn start_download(&mut self) {
+        if self.is_downloading {
+            return;
+        }
+        self.is_downloading = true;
+        self.status_message = "Downloading whisper...".to_string();
+        let data_dir = directories::ProjectDirs::from("com", "rteams", "RTeamsMeetingAssistant")
+            .map(|p| p.data_dir().to_path_buf())
+            .unwrap_or_else(|| std::env::temp_dir().join("rteams-meeting-assistant"));
+        let dl = WhisperDownloader::new(data_dir);
+        let tx = self.download_tx.clone();
+        let tx2 = self.download_tx.clone();
+        std::thread::spawn(move || {
+            if let Err(e) = dl.ensure_downloaded(&tx) {
+                let _ = tx2.send(format!("Download failed: {e}"));
+            } else {
+                let _ = tx2.send("Download complete! Set paths in Settings.".into());
+            }
+        });
+    }
 }
 
 impl eframe::App for MeetingAssistantApp {
@@ -190,7 +256,8 @@ impl eframe::App for MeetingAssistantApp {
             self.current_transcript = payload.source_text.clone();
             self.current_translation = payload.translated_text;
             self.current_suggestions = payload.suggestions;
-            self.transcript_history.push(payload.source_text);
+            let entry = format!("[{}] {}", payload.speaker_label, payload.source_text);
+            self.transcript_history.push(entry);
             if self.transcript_history.len() > 50 {
                 self.transcript_history.remove(0);
             }
@@ -200,6 +267,28 @@ impl eframe::App for MeetingAssistantApp {
             self.summary_text = summary;
             self.summary_generating = false;
             self.status_message = "Summary ready".to_string();
+        }
+
+        while let Ok(msg) = self.download_rx.try_recv() {
+            self.is_downloading = false;
+            self.status_message = msg.clone();
+            if msg.starts_with("Download complete") {
+                let data_dir =
+                    directories::ProjectDirs::from("com", "rteams", "RTeamsMeetingAssistant")
+                        .map(|p| p.data_dir().to_path_buf())
+                        .unwrap_or_else(|| {
+                            std::env::temp_dir().join("rteams-meeting-assistant")
+                        });
+                let dl = WhisperDownloader::new(data_dir);
+                let bp = dl.bin_path().to_string_lossy().to_string();
+                let mp = dl.model_path().to_string_lossy().to_string();
+                if self.config.whisper_binary.is_empty() {
+                    self.config.whisper_binary = bp;
+                }
+                if self.config.whisper_model.is_empty() {
+                    self.config.whisper_model = mp;
+                }
+            }
         }
 
         egui::TopBottomPanel::top("title_bar").show(ctx, |ui| {
@@ -231,7 +320,16 @@ impl eframe::App for MeetingAssistantApp {
                         .max_height(avail.y - 100.0)
                         .show(ui, |ui| {
                             for line in self.transcript_history.iter().rev() {
-                                ui.label(line);
+                                if let Some(speaker_end) = line.find(']') {
+                                    let label = &line[..speaker_end + 1];
+                                    let text = &line[speaker_end + 1..];
+                                    ui.horizontal(|ui| {
+                                        ui.colored_label(egui::Color32::LIGHT_BLUE, label);
+                                        ui.label(text);
+                                    });
+                                } else {
+                                    ui.label(line);
+                                }
                             }
                         });
                 });
@@ -239,9 +337,11 @@ impl eframe::App for MeetingAssistantApp {
                 ui.separator();
                 ui.vertical(|ui| {
                     ui.horizontal(|ui| {
-                        let tabs = [("Translate", RightTab::Translation),
-                                    ("Suggest", RightTab::Suggestions),
-                                    ("Notes", RightTab::Notes)];
+                        let tabs = [
+                            ("Translate", RightTab::Translation),
+                            ("Suggest", RightTab::Suggestions),
+                            ("Notes", RightTab::Notes),
+                        ];
                         for (label, tab) in tabs {
                             let selected = self.right_tab == tab;
                             if ui.selectable_label(selected, label).clicked() {
@@ -292,10 +392,24 @@ impl eframe::App for MeetingAssistantApp {
                             &self.config.notes_dir,
                         ) {
                             self.saved_notes.push(path.clone());
-                            self.status_message =
-                                format!("Saved: {}", path.file_name().unwrap().to_string_lossy());
+                            self.status_message = format!(
+                                "Saved: {}",
+                                path.file_name().unwrap().to_string_lossy()
+                            );
                         }
                     }
+                }
+
+                if self.config.whisper_binary.is_empty()
+                    && !self.is_downloading
+                {
+                    if ui.button("Download Whisper").clicked() {
+                        self.start_download();
+                    }
+                }
+
+                if self.is_downloading {
+                    ui.label("Downloading...");
                 }
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -337,9 +451,7 @@ fn notes_tab(ui: &mut egui::Ui, app: &mut MeetingAssistantApp) {
         }
         if ui.button("Open Folder").clicked() {
             let dir = &app.config.notes_dir;
-            let _ = std::process::Command::new("explorer")
-                .arg(dir)
-                .spawn();
+            let _ = std::process::Command::new("explorer").arg(dir).spawn();
         }
     });
 
@@ -353,7 +465,8 @@ fn notes_tab(ui: &mut egui::Ui, app: &mut MeetingAssistantApp) {
             }
             for path in &app.saved_notes {
                 ui.horizontal(|ui| {
-                    let name = path.file_name()
+                    let name = path
+                        .file_name()
                         .map(|n| n.to_string_lossy().to_string())
                         .unwrap_or_default();
                     if ui.button("Open").clicked() {

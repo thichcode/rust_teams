@@ -3,10 +3,13 @@
 mod app;
 mod audio;
 mod config;
+mod diarize;
+mod download;
 mod notes;
 mod stt;
 mod suggest;
 mod translate;
+mod vad;
 
 use app::MeetingAssistantApp;
 use config::Config;
