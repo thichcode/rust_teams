@@ -26,7 +26,7 @@ impl OllamaSuggester {
 impl Suggester for OllamaSuggester {
     async fn suggest(&self, context: &str, latest: &str, lang: &str, n: usize) -> Result<Vec<String>> {
         let prompt = format!(
-            "You are a meeting assistant. Based on the conversation, suggest 3 short replies in {lang}: one formal, one casual, and one short quick reply. \
+            "You are a meeting assistant. Based on the conversation, suggest 3 short replies in {lang}: a professional explanation, a simple easy-to-understand explanation, and a quick clarification. \
              Format as a JSON array of strings.\n\nContext:\n{context}\n\nLatest: \"{latest}\""
         );
         let body = serde_json::json!({
