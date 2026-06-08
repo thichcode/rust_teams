@@ -14,7 +14,6 @@ use crate::translate::Translator;
 
 #[derive(Clone)]
 pub struct RealtimePayload {
-    pub timestamp: u64,
     pub source_text: String,
     pub translated_text: String,
     pub suggestions: Vec<String>,
@@ -24,7 +23,6 @@ pub struct MeetingAssistantApp {
     config: Config,
     is_recording: bool,
 
-    audio: Option<AudioCapture>,
     stop_tx: Option<mpsc::Sender<()>>,
     audio_thread: Option<std::thread::JoinHandle<()>>,
     running: Arc<AtomicBool>,
@@ -49,7 +47,6 @@ impl MeetingAssistantApp {
             status_message: "Ready".to_string(),
             config,
             is_recording: false,
-            audio: None,
             stop_tx: None,
             audio_thread: None,
             running: Arc::new(AtomicBool::new(false)),
@@ -133,10 +130,6 @@ impl MeetingAssistantApp {
 
                     if let Ok((text, translated, suggestions)) = result {
                         let _ = tx.send(RealtimePayload {
-                            timestamp: std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap()
-                                .as_secs(),
                             source_text: text,
                             translated_text: translated,
                             suggestions,

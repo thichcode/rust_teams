@@ -159,6 +159,7 @@ impl AudioCapture {
         self.buffer.lock().map(|mut b| std::mem::take(&mut *b)).unwrap_or_default()
     }
 
+    #[allow(dead_code)]
     pub fn is_recording(&self) -> bool {
         self.is_recording.load(Ordering::Relaxed)
     }
