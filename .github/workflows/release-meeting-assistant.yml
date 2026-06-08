@@ -1,0 +1,185 @@
+name: Release Meeting Assistant
+
+on:
+  push:
+    tags:
+      - 'rteams-meeting-assistant-v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Check for Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag_name: ${{ steps.check.outputs.tag_name }}
+      version: ${{ steps.check.outputs.version }}
+      should_release: ${{ steps.check.outputs.should_release }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if release needed
+        id: check
+        shell: bash
+        run: |
+          CARGO_TOML="rteams-meeting-assistant/Cargo.toml"
+          VERSION=$(grep '^version =' "$CARGO_TOML" | sed 's/version = "\(.*\)"/\1/' | head -1)
+          TAG="rteams-meeting-assistant-v${VERSION}"
+          echo "Current version: ${VERSION}"
+          echo "Expected tag: ${TAG}"
+
+          PUSHED_TAG="${GITHUB_REF#refs/tags/}"
+          if [ "${PUSHED_TAG}" = "${TAG}" ]; then
+            echo "Tag matches version - proceeding"
+            echo "tag_name=${TAG}" >> $GITHUB_OUTPUT
+            echo "version=${VERSION}" >> $GITHUB_OUTPUT
+            echo "should_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "Pushed tag ${PUSHED_TAG} doesn't match expected ${TAG} - skipping"
+            echo "should_release=false" >> $GITHUB_OUTPUT
+          fi
+
+  build:
+    name: Build Release
+    needs: check
+    if: needs.check.outputs.should_release == 'true'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-meeting-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-meeting-
+
+      - name: Build (release)
+        run: cargo build --release --package rteams-meeting-assistant
+
+      - name: Prepare release package
+        shell: pwsh
+        run: |
+          Copy-Item target/release/rteams-meeting-assistant.exe rteams-meeting-assistant-windows-x64.exe
+          Get-Item rteams-meeting-assistant-windows-x64.exe | Select-Object Name, Length
+
+      - name: Create zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path rteams-meeting-assistant-windows-x64.exe -DestinationPath rteams-meeting-assistant-windows-x64.zip
+          Get-Item *.exe, *.zip | Select-Object Name, Length
+
+      - name: Upload exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rteams-meeting-assistant-windows-x64.exe
+          path: rteams-meeting-assistant-windows-x64.exe
+          retention-days: 90
+
+      - name: Upload zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rteams-meeting-assistant-windows-x64.zip
+          path: rteams-meeting-assistant-windows-x64.zip
+          retention-days: 90
+
+  release:
+    name: Create Release
+    needs: [check, build]
+    runs-on: ubuntu-latest
+    if: needs.check.outputs.should_release == 'true'
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download exe artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rteams-meeting-assistant-windows-x64.exe
+          path: release
+
+      - name: Download zip artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rteams-meeting-assistant-windows-x64.zip
+          path: release
+
+      - name: List release assets
+        shell: bash
+        run: ls -la release/
+
+      - name: Generate release notes
+        id: notes
+        shell: bash
+        run: |
+          VERSION="${{ needs.check.outputs.version }}"
+          TAG="${{ needs.check.outputs.tag_name }}"
+          REPO="${{ github.repository }}"
+          BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
+
+          cat > /tmp/release_notes.md << EOFRN
+          ## R Teams Meeting Assistant v${VERSION}
+
+          Standalone meeting assistant with local STT (whisper.cpp) + Ollama translate/suggest.
+
+          ### Download
+
+          [rteams-meeting-assistant-windows-x64.exe](${BASE_URL}/rteams-meeting-assistant-windows-x64.exe) (~9MB)
+
+          [rteams-meeting-assistant-windows-x64.zip](${BASE_URL}/rteams-meeting-assistant-windows-x64.zip) (~3MB)
+
+          ### Features
+
+          - Realtime Speech-to-Text via whisper.cpp (local)
+          - Translation via Ollama (local LLM)
+          - Reply suggestions via Ollama
+          - Save meeting notes as markdown
+          - Configurable STT/LLM endpoints
+
+          ### Requirements
+
+          - Windows 10/11 (64-bit)
+          - [whisper.cpp](https://github.com/ggerganov/whisper.cpp) binary + model
+          - [Ollama](https://ollama.ai) running locally
+
+          Built with Rust + egui | Report Issues: https://github.com/${REPO}/issues
+          EOFRN
+
+          NOTES=$(cat /tmp/release_notes.md)
+          {
+            echo "notes<<EOF"
+            echo "$NOTES"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.check.outputs.tag_name }}
+          name: ${{ needs.check.outputs.tag_name }}
+          body: ${{ steps.notes.outputs.notes }}
+          files: |
+            release/rteams-meeting-assistant-windows-x64.exe
+            release/rteams-meeting-assistant-windows-x64.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
