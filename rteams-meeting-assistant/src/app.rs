@@ -184,7 +184,7 @@ impl MeetingAssistantApp {
                                     .unwrap_or_default();
                                 let ctx = rolling.join("\n");
                                 let suggestions = suggester
-                                    .suggest(&ctx, &text, &cfg.target_lang, 3)
+                                    .suggest(&ctx, &text, &cfg.source_lang, 3)
                                     .await
                                     .unwrap_or_default();
                                 rolling.push(text.clone());
