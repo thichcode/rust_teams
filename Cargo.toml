@@ -1,3 +1,6 @@
+[workspace]
+members = ["rteams-meeting-assistant"]
+
 [package]
 name = "rust_teams"
 version = "0.9.3"
