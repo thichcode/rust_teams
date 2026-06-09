@@ -5,9 +5,7 @@ pub mod badge;
 pub mod browser;
 pub mod command_bar;
 pub mod console;
-pub mod meeting_detect;
 pub mod performance;
-pub mod realtime_panel;
 pub mod window_manager;
 
 use serde::{Deserialize, Serialize};

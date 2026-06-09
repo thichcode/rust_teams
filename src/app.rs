@@ -1,9 +1,11 @@
 //! Application configuration types
 use serde::{Deserialize, Serialize};
 
-pub use crate::meeting::config::MeetingNotesConfig;
-pub use crate::meeting::realtime_config::RealtimeTranslateConfig;
 pub use crate::ui::WindowSettings;
+
+fn default_memory_config() -> MemoryOptimization {
+    MemoryOptimization::default()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
@@ -12,22 +14,6 @@ pub struct AppConfig {
     pub current_profile_id: Option<String>,
     #[serde(default = "default_memory_config")]
     pub memory_optimization: MemoryOptimization,
-    #[serde(default = "default_meeting_notes_config")]
-    pub meeting_notes: MeetingNotesConfig,
-    #[serde(default = "default_realtime_translate_config")]
-    pub realtime_translate: RealtimeTranslateConfig,
-}
-
-fn default_memory_config() -> MemoryOptimization {
-    MemoryOptimization::default()
-}
-
-fn default_meeting_notes_config() -> MeetingNotesConfig {
-    MeetingNotesConfig::default()
-}
-
-fn default_realtime_translate_config() -> RealtimeTranslateConfig {
-    RealtimeTranslateConfig::default()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

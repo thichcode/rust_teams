@@ -3,7 +3,7 @@ members = ["rteams-meeting-assistant"]
 
 [package]
 name = "rust_teams"
-version = "0.9.3"
+version = "0.9.4"
 edition = "2024"  # Latest Rust edition (2024)
 
 [features]
@@ -42,27 +42,6 @@ chrono = "0.4"
 # Regex for parsing unread count
 regex = "1.0"
 
-# Meeting notes - Ollama client
-ollama-rs = "0.3"
-
-# Meeting notes - Audio format
-hound = "3.5"
-
-# Meeting notes - UUID for filenames
-uuid = { version = "1", features = ["v4"] }
-
-# Meeting notes - Async runtime
-tokio = { version = "1", features = ["full"] }
-
-# Meeting notes - Async trait
-async-trait = "0.1"
-
-# Whisper download - zip extraction
-zip = { version = "2", default-features = false, features = ["deflate"] }
-
 # Windows-specific dependencies
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["winuser", "shellapi", "winbase", "processthreadsapi", "wincon"] }
-cpal = "0.13"
-# WASAPI bindings for system audio loopback capture
-wasapi = "0.20"
