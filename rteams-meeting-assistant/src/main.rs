@@ -3,6 +3,7 @@
 mod app;
 mod audio;
 mod config;
+mod diagnostics;
 mod diarize;
 mod download;
 mod notes;

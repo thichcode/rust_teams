@@ -1,10 +1,13 @@
-use std::sync::mpsc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::time::Duration;
 
 use crate::audio::AudioCapture;
 use crate::config::Config;
+use crate::diagnostics::{
+    DiagnosticEvent, DiagnosticKind, DiagnosticStatus, DiagnosticsReport, DiagnosticsRunner,
+};
 use crate::diarize::Diarizer;
 use crate::download::WhisperDownloader;
 use crate::notes::{list_notes, save_transcript, spawn_summarize};
@@ -63,6 +66,11 @@ pub struct MeetingAssistantApp {
 
     start_time: Option<std::time::Instant>,
     last_auto_save: std::time::Instant,
+
+    diagnostics: DiagnosticsReport,
+    diagnostics_rx: mpsc::Receiver<DiagnosticEvent>,
+    diagnostics_tx: mpsc::Sender<DiagnosticEvent>,
+    diagnostics_running: bool,
 }
 
 impl MeetingAssistantApp {
@@ -70,6 +78,7 @@ impl MeetingAssistantApp {
         let (tx, rx) = mpsc::channel();
         let (stx, srx) = mpsc::channel();
         let (dtx, drx) = mpsc::channel();
+        let (diag_tx, diag_rx) = mpsc::channel();
         Self {
             status_message: "Ready".to_string(),
             config,
@@ -95,6 +104,10 @@ impl MeetingAssistantApp {
             download_tx: dtx,
             start_time: None,
             last_auto_save: std::time::Instant::now(),
+            diagnostics: DiagnosticsReport::default(),
+            diagnostics_rx: diag_rx,
+            diagnostics_tx: diag_tx,
+            diagnostics_running: false,
         }
     }
 
@@ -105,6 +118,19 @@ impl MeetingAssistantApp {
         }
         if !std::path::Path::new(&self.config.whisper_binary).exists() {
             self.status_message = format!("Not found: {}", self.config.whisper_binary);
+            return;
+        }
+        if self.config.whisper_model.is_empty() {
+            self.status_message = "Set whisper model path in Settings first".to_string();
+            return;
+        }
+        if !std::path::Path::new(&self.config.whisper_model).exists() {
+            self.status_message = format!("Not found: {}", self.config.whisper_model);
+            return;
+        }
+        if let Some(issue) = self.diagnostics.blocking_issue() {
+            self.status_message = issue;
+            self.show_config = true;
             return;
         }
 
@@ -130,10 +156,8 @@ impl MeetingAssistantApp {
                 }
 
                 let stt = LocalWhisper::new(&cfg.whisper_binary, &cfg.whisper_model);
-                let translator =
-                    OllamaTranslator::new(&cfg.ollama_endpoint, &cfg.translator_model);
-                let suggester =
-                    OllamaSuggester::new(&cfg.ollama_endpoint, &cfg.suggester_model);
+                let translator = OllamaTranslator::new(&cfg.ollama_endpoint, &cfg.translator_model);
+                let suggester = OllamaSuggester::new(&cfg.ollama_endpoint, &cfg.suggester_model);
                 let mut vad = Vad::new();
                 let mut diarizer = Diarizer::new();
                 let mut rolling: Vec<String> = Vec::new();
@@ -256,6 +280,24 @@ impl MeetingAssistantApp {
             }
         });
     }
+
+    fn run_diagnostics_full(&mut self) {
+        if self.diagnostics_running {
+            return;
+        }
+        let config = self.config.clone();
+        let tx = self.diagnostics_tx.clone();
+        std::thread::spawn(move || DiagnosticsRunner::run_full(config, tx));
+    }
+
+    fn run_diagnostic_one(&mut self, kind: DiagnosticKind) {
+        if self.diagnostics_running {
+            return;
+        }
+        let config = self.config.clone();
+        let tx = self.diagnostics_tx.clone();
+        std::thread::spawn(move || DiagnosticsRunner::run_one(kind, config, tx));
+    }
 }
 
 impl eframe::App for MeetingAssistantApp {
@@ -284,9 +326,7 @@ impl eframe::App for MeetingAssistantApp {
                 let data_dir =
                     directories::ProjectDirs::from("com", "rteams", "RTeamsMeetingAssistant")
                         .map(|p| p.data_dir().to_path_buf())
-                        .unwrap_or_else(|| {
-                            std::env::temp_dir().join("rteams-meeting-assistant")
-                        });
+                        .unwrap_or_else(|| std::env::temp_dir().join("rteams-meeting-assistant"));
                 let dl = WhisperDownloader::new(data_dir);
                 let bp = dl.bin_path().to_string_lossy().to_string();
                 let mp = dl.model_path().to_string_lossy().to_string();
@@ -295,6 +335,25 @@ impl eframe::App for MeetingAssistantApp {
                 }
                 if self.config.whisper_model.is_empty() {
                     self.config.whisper_model = mp;
+                }
+            }
+        }
+
+        while let Ok(event) = self.diagnostics_rx.try_recv() {
+            match event {
+                DiagnosticEvent::Started(kind) => {
+                    self.diagnostics_running = true;
+                    self.diagnostics.mark_running(kind);
+                    self.status_message = format!("Testing {}...", kind.label());
+                }
+                DiagnosticEvent::Finished(result) => {
+                    self.status_message =
+                        format!("{}: {}", result.kind.label(), result.status.label());
+                    self.diagnostics.apply(result);
+                }
+                DiagnosticEvent::Done => {
+                    self.diagnostics_running = false;
+                    self.status_message = "Diagnostics complete".to_string();
                 }
             }
         }
@@ -385,10 +444,9 @@ impl eframe::App for MeetingAssistantApp {
         if self.is_recording && self.start_time.is_some() {
             if self.last_auto_save.elapsed() >= std::time::Duration::from_secs(300) {
                 if !self.transcript_history.is_empty() {
-                    if let Ok(path) = save_transcript(
-                        &self.transcript_history,
-                        &self.config.notes_dir,
-                    ) {
+                    if let Ok(path) =
+                        save_transcript(&self.transcript_history, &self.config.notes_dir)
+                    {
                         self.saved_notes.push(path.clone());
                         self.status_message = format!(
                             "Auto-saved: {}",
@@ -422,22 +480,17 @@ impl eframe::App for MeetingAssistantApp {
 
                 if ui.button("Save Transcript").clicked() {
                     if !self.transcript_history.is_empty() {
-                        if let Ok(path) = save_transcript(
-                            &self.transcript_history,
-                            &self.config.notes_dir,
-                        ) {
+                        if let Ok(path) =
+                            save_transcript(&self.transcript_history, &self.config.notes_dir)
+                        {
                             self.saved_notes.push(path.clone());
-                            self.status_message = format!(
-                                "Saved: {}",
-                                path.file_name().unwrap().to_string_lossy()
-                            );
+                            self.status_message =
+                                format!("Saved: {}", path.file_name().unwrap().to_string_lossy());
                         }
                     }
                 }
 
-                if self.config.whisper_binary.is_empty()
-                    && !self.is_downloading
-                {
+                if self.config.whisper_binary.is_empty() && !self.is_downloading {
                     if ui.button("Download Whisper").clicked() {
                         self.start_download();
                     }
@@ -573,6 +626,8 @@ impl MeetingAssistantApp {
         ui.label("Notes Directory:");
         ui.text_edit_singleline(&mut self.config.notes_dir);
 
+        self.diagnostics_panel(ui);
+
         if ui.button("Save & Back").clicked() {
             self.config.save();
             self.show_config = false;
@@ -581,5 +636,90 @@ impl MeetingAssistantApp {
         ui.separator();
         ui.colored_label(egui::Color32::GRAY, "Config saved to:");
         ui.label(crate::config::Config::config_path().display().to_string());
+    }
+
+    fn diagnostics_panel(&mut self, ui: &mut egui::Ui) {
+        ui.separator();
+        ui.heading("Setup Diagnostics");
+        ui.horizontal_wrapped(|ui| {
+            if ui
+                .add_enabled(!self.diagnostics_running, egui::Button::new("Test setup"))
+                .clicked()
+            {
+                self.run_diagnostics_full();
+            }
+            if ui
+                .add_enabled(!self.diagnostics_running, egui::Button::new("Test Mic"))
+                .clicked()
+            {
+                self.run_diagnostic_one(DiagnosticKind::Mic);
+            }
+            if ui
+                .add_enabled(
+                    !self.diagnostics_running,
+                    egui::Button::new("Test System Audio"),
+                )
+                .clicked()
+            {
+                self.run_diagnostic_one(DiagnosticKind::SystemAudio);
+            }
+            if ui
+                .add_enabled(!self.diagnostics_running, egui::Button::new("Test Whisper"))
+                .clicked()
+            {
+                self.run_diagnostic_one(DiagnosticKind::Whisper);
+            }
+            if ui
+                .add_enabled(!self.diagnostics_running, egui::Button::new("Test Ollama"))
+                .clicked()
+            {
+                self.run_diagnostic_one(DiagnosticKind::Ollama);
+            }
+        });
+
+        ui.separator();
+        for kind in [
+            DiagnosticKind::Mic,
+            DiagnosticKind::SystemAudio,
+            DiagnosticKind::Whisper,
+            DiagnosticKind::Ollama,
+        ] {
+            if let Some(result) = self.diagnostics.results.get(&kind) {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(egui::RichText::new(kind.label()).strong());
+                    ui.colored_label(status_color(result.status), result.status.label());
+                    ui.label(&result.message);
+                });
+                if !result.hint.is_empty() {
+                    ui.colored_label(egui::Color32::YELLOW, &result.hint);
+                }
+            }
+        }
+
+        ui.horizontal(|ui| {
+            if ui.button("Copy diagnostics").clicked() {
+                ui.ctx()
+                    .copy_text(self.diagnostics.format_for_clipboard(&self.config));
+                self.status_message = "Diagnostics copied".to_string();
+            }
+        });
+
+        ui.label(egui::RichText::new("Diagnostics log").strong());
+        egui::ScrollArea::vertical()
+            .id_salt("diagnostics-log")
+            .max_height(160.0)
+            .show(ui, |ui| {
+                ui.monospace(&self.diagnostics.log);
+            });
+    }
+}
+
+fn status_color(status: DiagnosticStatus) -> egui::Color32 {
+    match status {
+        DiagnosticStatus::Ok => egui::Color32::GREEN,
+        DiagnosticStatus::Warning => egui::Color32::YELLOW,
+        DiagnosticStatus::Failed => egui::Color32::RED,
+        DiagnosticStatus::Running => egui::Color32::LIGHT_BLUE,
+        DiagnosticStatus::NotRun => egui::Color32::GRAY,
     }
 }
