@@ -54,11 +54,17 @@ pub fn check_for_update() -> Result<Option<UpdateInfo>, String> {
         .json()
         .map_err(|e| format!("Failed to parse response: {}", e))?;
 
-    let tag_name = release["tag_name"]
+       let tag_name = release["tag_name"]
         .as_str()
         .ok_or("Missing tag_name")?
-        .trim_start_matches('v')
         .to_string();
+    let tag_name = if let Some(pos) = tag_name.rfind("-v") {
+        // Handle tags like "rteams-meeting-assistant-v0.4.4"
+        tag_name[pos+2..].to_string()
+    } else {
+        // Handle standard tags like "v1.2.3"
+        tag_name.trim_start_matches('v').to_string()
+    };
 
     let current = semver::Version::parse(CURRENT_VERSION)
         .map_err(|e| format!("Invalid current version: {}", e))?;
