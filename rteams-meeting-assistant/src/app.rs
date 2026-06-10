@@ -71,6 +71,7 @@ pub struct MeetingAssistantApp {
     diagnostics_rx: mpsc::Receiver<DiagnosticEvent>,
     diagnostics_tx: mpsc::Sender<DiagnosticEvent>,
     diagnostics_running: bool,
+    audio_input_devices: Vec<String>,
 }
 
 impl MeetingAssistantApp {
@@ -108,6 +109,7 @@ impl MeetingAssistantApp {
             diagnostics_rx: diag_rx,
             diagnostics_tx: diag_tx,
             diagnostics_running: false,
+            audio_input_devices: AudioCapture::input_device_names(),
         }
     }
 
@@ -149,7 +151,10 @@ impl MeetingAssistantApp {
             .name("audio-pipeline".to_string())
             .spawn(move || {
                 let rt = tokio::runtime::Runtime::new().unwrap();
-                let mut audio = AudioCapture::new();
+                let mut audio = AudioCapture::new(
+                    &cfg.audio_input_device,
+                    cfg.capture_system_audio,
+                );
                 if let Err(e) = audio.start() {
                     log::error!("audio start: {e}");
                     return;
@@ -610,6 +615,37 @@ impl MeetingAssistantApp {
 
         ui.label("Whisper Model Path:");
         ui.text_edit_singleline(&mut self.config.whisper_model);
+
+        ui.separator();
+        ui.heading("Audio");
+        ui.horizontal(|ui| {
+            ui.label("Audio Input:");
+            let selected = if self.config.audio_input_device.is_empty() {
+                "Default".to_string()
+            } else {
+                self.config.audio_input_device.clone()
+            };
+            egui::ComboBox::from_id_salt("audio-input-device")
+                .selected_text(selected)
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(
+                        &mut self.config.audio_input_device,
+                        String::new(),
+                        "Default",
+                    );
+                    for name in &self.audio_input_devices {
+                        ui.selectable_value(
+                            &mut self.config.audio_input_device,
+                            name.clone(),
+                            name,
+                        );
+                    }
+                });
+            if ui.button("Refresh Audio Devices").clicked() {
+                self.audio_input_devices = AudioCapture::input_device_names();
+            }
+        });
+        ui.checkbox(&mut self.config.capture_system_audio, "Capture System Audio");
 
         ui.label("Source Language (e.g. en):");
         ui.text_edit_singleline(&mut self.config.source_lang);

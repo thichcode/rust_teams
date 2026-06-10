@@ -6,11 +6,19 @@ pub struct Config {
     pub ollama_endpoint: String,
     pub whisper_binary: String,
     pub whisper_model: String,
+    #[serde(default)]
+    pub audio_input_device: String,
+    #[serde(default = "default_capture_system_audio")]
+    pub capture_system_audio: bool,
     pub source_lang: String,
     pub target_lang: String,
     pub translator_model: String,
     pub suggester_model: String,
     pub notes_dir: String,
+}
+
+fn default_capture_system_audio() -> bool {
+    true
 }
 
 impl Default for Config {
@@ -19,6 +27,8 @@ impl Default for Config {
             ollama_endpoint: "http://localhost:11434".to_string(),
             whisper_binary: String::new(),
             whisper_model: String::new(),
+            audio_input_device: String::new(),
+            capture_system_audio: true,
             source_lang: "en".to_string(),
             target_lang: "vi".to_string(),
             translator_model: "qwen2.5:7b".to_string(),
@@ -53,5 +63,29 @@ impl Config {
         if let Ok(json) = serde_json::to_string_pretty(self) {
             let _ = std::fs::write(Self::config_path(), json);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn old_config_defaults_to_default_mic_and_system_audio_enabled() {
+        let json = r#"{
+            "ollama_endpoint": "http://localhost:11434",
+            "whisper_binary": "whisper.exe",
+            "whisper_model": "model.bin",
+            "source_lang": "en",
+            "target_lang": "vi",
+            "translator_model": "qwen2.5:7b",
+            "suggester_model": "gemma3:4b",
+            "notes_dir": "notes"
+        }"#;
+
+        let config: Config = serde_json::from_str(json).unwrap();
+
+        assert_eq!(config.audio_input_device, "");
+        assert!(config.capture_system_audio);
     }
 }

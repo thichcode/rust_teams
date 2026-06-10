@@ -242,8 +242,8 @@ impl DiagnosticsRunner {
             let result = match kind {
                 DiagnosticKind::Whisper => Self::check_whisper_smoke(&config),
                 DiagnosticKind::Ollama => Self::check_ollama(&config),
-                DiagnosticKind::Mic => Self::check_mic(),
-                DiagnosticKind::SystemAudio => Self::check_system_audio(),
+                DiagnosticKind::Mic => Self::check_mic(&config),
+                DiagnosticKind::SystemAudio => Self::check_system_audio(&config),
             };
             let _ = tx.send(DiagnosticEvent::Finished(result));
         }
@@ -253,8 +253,8 @@ impl DiagnosticsRunner {
     pub fn run_one(kind: DiagnosticKind, config: Config, tx: mpsc::Sender<DiagnosticEvent>) {
         let _ = tx.send(DiagnosticEvent::Started(kind));
         let result = match kind {
-            DiagnosticKind::Mic => Self::check_mic(),
-            DiagnosticKind::SystemAudio => Self::check_system_audio(),
+            DiagnosticKind::Mic => Self::check_mic(&config),
+            DiagnosticKind::SystemAudio => Self::check_system_audio(&config),
             DiagnosticKind::Whisper => Self::check_whisper_user(&config),
             DiagnosticKind::Ollama => Self::check_ollama(&config),
         };
@@ -294,7 +294,7 @@ impl DiagnosticsRunner {
             return result;
         }
 
-        let samples = match capture_mic_samples(Duration::from_secs(3)) {
+        let samples = match capture_mic_samples(&config.audio_input_device, Duration::from_secs(3)) {
             Ok(samples) => samples,
             Err(e) => {
                 return DiagnosticResult::new(
@@ -440,8 +440,8 @@ impl DiagnosticsRunner {
         )
     }
 
-    fn check_mic() -> DiagnosticResult {
-        match capture_mic_samples(Duration::from_millis(900)) {
+    fn check_mic(config: &Config) -> DiagnosticResult {
+        match capture_mic_samples(&config.audio_input_device, Duration::from_millis(900)) {
             Ok(samples) => classify_samples(
                 DiagnosticKind::Mic,
                 samples,
@@ -457,7 +457,17 @@ impl DiagnosticsRunner {
         }
     }
 
-    fn check_system_audio() -> DiagnosticResult {
+    fn check_system_audio(config: &Config) -> DiagnosticResult {
+        if !config.capture_system_audio {
+            return DiagnosticResult::new(
+                DiagnosticKind::SystemAudio,
+                DiagnosticStatus::Warning,
+                "System audio capture is disabled",
+                "Enable Capture System Audio in Settings to test loopback capture.",
+                "capture_system_audio=false",
+            );
+        }
+
         match capture_system_audio_samples(Duration::from_millis(900)) {
             Ok(samples) => classify_samples(
                 DiagnosticKind::SystemAudio,
@@ -557,10 +567,9 @@ fn run_whisper(config: &Config, samples: &[f32]) -> anyhow::Result<String> {
     Ok(text.trim().to_string())
 }
 
-fn capture_mic_samples(duration: Duration) -> anyhow::Result<Vec<f32>> {
+fn capture_mic_samples(device_name: &str, duration: Duration) -> anyhow::Result<Vec<f32>> {
     let host = cpal::default_host();
-    let device = host
-        .default_input_device()
+    let device = select_input_device(&host, device_name)?
         .ok_or_else(|| anyhow::anyhow!("No default input device"))?;
     let cfg = StreamConfig {
         channels: 1,
@@ -590,6 +599,22 @@ fn capture_mic_samples(duration: Duration) -> anyhow::Result<Vec<f32>> {
         .lock()
         .map(|mut b| std::mem::take(&mut *b))
         .unwrap_or_default())
+}
+
+fn select_input_device(host: &cpal::Host, name: &str) -> anyhow::Result<Option<cpal::Device>> {
+    let wanted = name.trim();
+    if wanted.is_empty() {
+        return Ok(host.default_input_device());
+    }
+
+    let devices = host.input_devices()?;
+    for device in devices {
+        if device.name().ok().as_deref() == Some(wanted) {
+            return Ok(Some(device));
+        }
+    }
+
+    anyhow::bail!("Selected audio input not found: {wanted}")
 }
 
 fn capture_system_audio_samples(duration: Duration) -> anyhow::Result<Vec<f32>> {

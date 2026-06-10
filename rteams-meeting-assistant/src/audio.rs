@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{SampleRate, Stream, StreamConfig};
+use cpal::{Device, SampleRate, Stream, StreamConfig};
 use wasapi::{
     get_default_device, AudioCaptureClient, Direction, Handle, SampleType, StreamMode, WaveFormat,
 };
@@ -90,16 +90,34 @@ pub struct AudioCapture {
     loopback_handle: Option<LoopbackHandle>,
     buffer: Arc<Mutex<Vec<f32>>>,
     is_recording: Arc<AtomicBool>,
+    audio_input_device: String,
+    capture_system_audio: bool,
 }
 
 impl AudioCapture {
-    pub fn new() -> Self {
+    pub fn new(audio_input_device: &str, capture_system_audio: bool) -> Self {
         Self {
             mic_stream: None,
             loopback_handle: None,
             buffer: Arc::new(Mutex::new(Vec::new())),
             is_recording: Arc::new(AtomicBool::new(false)),
+            audio_input_device: audio_input_device.to_string(),
+            capture_system_audio,
         }
+    }
+
+    pub fn input_device_names() -> Vec<String> {
+        let host = cpal::default_host();
+        let mut names: Vec<String> = host
+            .input_devices()
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(|device| device.name().ok())
+            .collect();
+        names.sort();
+        names.dedup();
+        names
     }
 
     pub fn start(&mut self) -> Result<()> {
@@ -112,7 +130,8 @@ impl AudioCapture {
         }
 
         let host = cpal::default_host();
-        if let Some(device) = host.default_input_device() {
+        let input_device = select_input_device(&host, &self.audio_input_device)?;
+        if let Some(device) = input_device {
             let cfg = StreamConfig {
                 channels: 1,
                 sample_rate: SampleRate(16000),
@@ -137,9 +156,15 @@ impl AudioCapture {
             self.mic_stream = Some(stream);
         }
 
-        match start_wasapi_loopback(self.buffer.clone()) {
-            Ok(h) => self.loopback_handle = Some(h),
-            Err(e) => log::warn!("loopback failed: {e}"),
+        if self.capture_system_audio {
+            match start_wasapi_loopback(self.buffer.clone()) {
+                Ok(h) => self.loopback_handle = Some(h),
+                Err(e) => log::warn!("loopback failed: {e}"),
+            }
+        }
+
+        if self.mic_stream.is_none() && self.loopback_handle.is_none() {
+            anyhow::bail!("No audio capture source is available");
         }
 
         self.is_recording.store(true, Ordering::Relaxed);
@@ -182,4 +207,22 @@ impl AudioCapture {
         }
         Ok(cursor.into_inner())
     }
+}
+
+fn select_input_device(host: &cpal::Host, name: &str) -> Result<Option<Device>> {
+    let wanted = name.trim();
+    if wanted.is_empty() {
+        return Ok(host.default_input_device());
+    }
+
+    let devices = host
+        .input_devices()
+        .map_err(|e| anyhow::anyhow!("input devices: {e}"))?;
+    for device in devices {
+        if device.name().ok().as_deref() == Some(wanted) {
+            return Ok(Some(device));
+        }
+    }
+
+    anyhow::bail!("Selected audio input not found: {wanted}")
 }
