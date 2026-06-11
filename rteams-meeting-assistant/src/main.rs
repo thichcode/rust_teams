@@ -7,6 +7,7 @@ mod diagnostics;
 mod export;
 mod diarize;
 mod download;
+mod hotkey;
 mod notes;
 mod stt;
 mod suggest;
@@ -35,12 +36,15 @@ fn main() -> eframe::Result<()> {
     let tray = tray::TrayManager::new();
     let tray_rx = tray.rx;
 
+    let hotkey = hotkey::HotkeyManager::new();
+    let hotkey_rx = hotkey.rx;
+
     eframe::run_native(
         "R Teams Meeting Assistant",
         native_options,
         Box::new(|cc| {
             let _ = &cc.egui_ctx;
-            Ok(Box::new(MeetingAssistantApp::new(cc, config, Some(tray_rx))))
+            Ok(Box::new(MeetingAssistantApp::new(cc, config, Some(tray_rx), Some(hotkey_rx))))
         }),
     )
 }

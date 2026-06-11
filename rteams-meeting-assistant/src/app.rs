@@ -20,6 +20,7 @@ use crate::translate::Translator;
 use crate::vad::Vad;
 use crate::tray;
 use crate::export;
+use crate::hotkey;
 
 #[derive(Clone, PartialEq)]
 enum RightTab {
@@ -75,11 +76,12 @@ pub struct MeetingAssistantApp {
     diagnostics_running: bool,
     audio_input_devices: Vec<String>,
     tray_rx: Option<mpsc::Receiver<tray::TrayCommand>>,
+    hotkey_rx: Option<mpsc::Receiver<hotkey::HotkeyEvent>>,
     window_visible: bool,
 }
 
 impl MeetingAssistantApp {
-    pub fn new(_cc: &eframe::CreationContext<'_>, config: Config, tray_rx: Option<mpsc::Receiver<tray::TrayCommand>>) -> Self {
+    pub fn new(_cc: &eframe::CreationContext<'_>, config: Config, tray_rx: Option<mpsc::Receiver<tray::TrayCommand>>, hotkey_rx: Option<mpsc::Receiver<hotkey::HotkeyEvent>>) -> Self {
         let (tx, rx) = mpsc::channel();
         let (stx, srx) = mpsc::channel();
         let (dtx, drx) = mpsc::channel();
@@ -115,6 +117,7 @@ impl MeetingAssistantApp {
             diagnostics_running: false,
             audio_input_devices: AudioCapture::input_device_names(),
             tray_rx,
+            hotkey_rx,
             window_visible: true,
         }
     }
@@ -312,7 +315,7 @@ impl MeetingAssistantApp {
 }
 
 impl eframe::App for MeetingAssistantApp {
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         while let Ok(payload) = self.payload_rx.try_recv() {
             self.current_transcript = payload.source_text.clone();
             self.current_translation = payload.translated_text;
@@ -388,6 +391,24 @@ impl eframe::App for MeetingAssistantApp {
                 }
                 tray::TrayCommand::Quit => {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+            }
+        }
+
+        let mut hotkey_events = Vec::new();
+        if let Some(ref rx) = self.hotkey_rx {
+            while let Ok(event) = rx.try_recv() {
+                hotkey_events.push(event);
+            }
+        }
+        for event in hotkey_events {
+            match event {
+                hotkey::HotkeyEvent::ToggleRecording => {
+                    if self.is_recording {
+                        self.stop_pipeline();
+                    } else {
+                        self.start_pipeline();
+                    }
                 }
             }
         }
@@ -556,6 +577,16 @@ impl eframe::App for MeetingAssistantApp {
                     ui.label(&self.status_message);
                 });
             });
+        });
+
+        ctx.input_mut(|i| {
+            if i.consume_key(egui::Modifiers::CTRL, egui::Key::S) {
+                if !self.transcript_history.is_empty() {
+                    if let Ok(path) = export::export_txt(&self.transcript_history, std::path::Path::new(&self.config.notes_dir)) {
+                        self.status_message = format!("Saved: {}", path.file_name().unwrap().to_string_lossy());
+                    }
+                }
+            }
         });
 
         ctx.request_repaint();
