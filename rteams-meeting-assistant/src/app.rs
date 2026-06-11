@@ -18,6 +18,7 @@ use crate::suggest::Suggester;
 use crate::translate::OllamaTranslator;
 use crate::translate::Translator;
 use crate::vad::Vad;
+use crate::export;
 
 #[derive(Clone, PartialEq)]
 enum RightTab {
@@ -392,16 +393,19 @@ impl eframe::App for MeetingAssistantApp {
                         .max_height(avail.y - 100.0)
                         .show(ui, |ui| {
                             for line in self.transcript_history.iter().rev() {
-                                if let Some(speaker_end) = line.find(']') {
-                                    let label = &line[..speaker_end + 1];
-                                    let text = &line[speaker_end + 1..];
-                                    ui.horizontal(|ui| {
+                                ui.horizontal(|ui| {
+                                    if let Some(speaker_end) = line.find(']') {
+                                        let label = &line[..speaker_end + 1];
+                                        let text = &line[speaker_end + 1..];
                                         ui.colored_label(egui::Color32::LIGHT_BLUE, label);
                                         ui.label(text);
-                                    });
-                                } else {
-                                    ui.label(line);
-                                }
+                                    } else {
+                                        ui.label(line);
+                                    }
+                                    if ui.small_button("Copy").clicked() {
+                                        ctx.copy_text(line.clone());
+                                    }
+                                });
                             }
                         });
                 });
@@ -495,6 +499,21 @@ impl eframe::App for MeetingAssistantApp {
                     }
                 }
 
+                if ui.button("Export TXT").clicked() {
+                    if !self.transcript_history.is_empty() {
+                        if let Ok(path) = export::export_txt(&self.transcript_history, std::path::Path::new(&self.config.notes_dir)) {
+                            self.status_message = format!("Exported: {}", path.file_name().unwrap().to_string_lossy());
+                        }
+                    }
+                }
+                if ui.button("Export MD").clicked() {
+                    if !self.transcript_history.is_empty() {
+                        if let Ok(path) = export::export_md(&self.transcript_history, std::path::Path::new(&self.config.notes_dir)) {
+                            self.status_message = format!("Exported: {}", path.file_name().unwrap().to_string_lossy());
+                        }
+                    }
+                }
+
                 if self.config.whisper_binary.is_empty() && !self.is_downloading {
                     if ui.button("Download Whisper").clicked() {
                         self.start_download();
@@ -545,6 +564,20 @@ fn notes_tab(ui: &mut egui::Ui, app: &mut MeetingAssistantApp) {
         if ui.button("Open Folder").clicked() {
             let dir = &app.config.notes_dir;
             let _ = std::process::Command::new("explorer").arg(dir).spawn();
+        }
+        if ui.button("Export TXT").clicked() {
+            if !app.transcript_history.is_empty() {
+                if let Ok(path) = export::export_txt(&app.transcript_history, std::path::Path::new(&app.config.notes_dir)) {
+                    app.status_message = format!("Exported: {}", path.file_name().unwrap().to_string_lossy());
+                }
+            }
+        }
+        if ui.button("Export MD").clicked() {
+            if !app.transcript_history.is_empty() {
+                if let Ok(path) = export::export_md(&app.transcript_history, std::path::Path::new(&app.config.notes_dir)) {
+                    app.status_message = format!("Exported: {}", path.file_name().unwrap().to_string_lossy());
+                }
+            }
         }
     });
 
