@@ -4,6 +4,7 @@ mod app;
 mod audio;
 mod config;
 mod diagnostics;
+mod export;
 mod diarize;
 mod download;
 mod notes;
