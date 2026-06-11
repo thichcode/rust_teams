@@ -19,6 +19,8 @@ async-trait = "0.1"
 hound = "3.5"
 uuid = { version = "1", features = ["v4"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
+tray-icon = "0.19"
+global-hotkey = "0.8"
 
 [target.'cfg(windows)'.dependencies]
 cpal = "0.13"
