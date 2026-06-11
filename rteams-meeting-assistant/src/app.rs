@@ -18,6 +18,7 @@ use crate::suggest::Suggester;
 use crate::translate::OllamaTranslator;
 use crate::translate::Translator;
 use crate::vad::Vad;
+use crate::tray;
 use crate::export;
 
 #[derive(Clone, PartialEq)]
@@ -73,10 +74,12 @@ pub struct MeetingAssistantApp {
     diagnostics_tx: mpsc::Sender<DiagnosticEvent>,
     diagnostics_running: bool,
     audio_input_devices: Vec<String>,
+    tray_rx: Option<mpsc::Receiver<tray::TrayCommand>>,
+    window_visible: bool,
 }
 
 impl MeetingAssistantApp {
-    pub fn new(_cc: &eframe::CreationContext<'_>, config: Config) -> Self {
+    pub fn new(_cc: &eframe::CreationContext<'_>, config: Config, tray_rx: Option<mpsc::Receiver<tray::TrayCommand>>) -> Self {
         let (tx, rx) = mpsc::channel();
         let (stx, srx) = mpsc::channel();
         let (dtx, drx) = mpsc::channel();
@@ -111,6 +114,8 @@ impl MeetingAssistantApp {
             diagnostics_tx: diag_tx,
             diagnostics_running: false,
             audio_input_devices: AudioCapture::input_device_names(),
+            tray_rx,
+            window_visible: true,
         }
     }
 
@@ -307,7 +312,7 @@ impl MeetingAssistantApp {
 }
 
 impl eframe::App for MeetingAssistantApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         while let Ok(payload) = self.payload_rx.try_recv() {
             self.current_transcript = payload.source_text.clone();
             self.current_translation = payload.translated_text;
@@ -360,6 +365,29 @@ impl eframe::App for MeetingAssistantApp {
                 DiagnosticEvent::Done => {
                     self.diagnostics_running = false;
                     self.status_message = "Diagnostics complete".to_string();
+                }
+            }
+        }
+
+        let mut tray_commands = Vec::new();
+        if let Some(ref rx) = self.tray_rx {
+            while let Ok(cmd) = rx.try_recv() {
+                tray_commands.push(cmd);
+            }
+        }
+        for cmd in tray_commands {
+            match cmd {
+                tray::TrayCommand::ToggleVisibility => {
+                    self.window_visible = !self.window_visible;
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(self.window_visible));
+                }
+                tray::TrayCommand::StopRecording => {
+                    if self.is_recording {
+                        self.stop_pipeline();
+                    }
+                }
+                tray::TrayCommand::Quit => {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             }
         }

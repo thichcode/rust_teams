@@ -11,6 +11,7 @@ mod notes;
 mod stt;
 mod suggest;
 mod translate;
+mod tray;
 mod vad;
 
 use app::MeetingAssistantApp;
@@ -31,12 +32,15 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
 
+    let tray = tray::TrayManager::new();
+    let tray_rx = tray.rx;
+
     eframe::run_native(
         "R Teams Meeting Assistant",
         native_options,
         Box::new(|cc| {
             let _ = &cc.egui_ctx;
-            Ok(Box::new(MeetingAssistantApp::new(cc, config)))
+            Ok(Box::new(MeetingAssistantApp::new(cc, config, Some(tray_rx))))
         }),
     )
 }
