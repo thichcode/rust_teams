@@ -21,7 +21,22 @@ pub fn get_auto_read_script() -> String {
         'use strict';
 
         const CONFIG = {
-            keywords: ['closed', 'cancel'],
+            keywords: [
+                'closed',
+                'cancel',
+                'đã đóng',
+                'đã kết thúc',
+                'hoàn tất',
+                'cuộc hội thoại đã đóng',
+                'đã được đóng',
+                'đóng cuộc trò chuyện',
+                'kết thúc cuộc trò chuyện',
+                'conversation closed',
+                'conversation ended',
+                'this conversation has been closed',
+                'chat closed',
+                'chat ended',
+            ],
             checkInterval: 30000,            // 30s between cycles
             maxChatsPerCycle: 3,             // limit disruption
             settleDelayMs: 800,              // wait for message pane
@@ -268,5 +283,17 @@ pub fn get_keywords() -> Vec<String> {
     vec![
         "closed".to_string(),
         "cancel".to_string(),
+        "đã đóng".to_string(),
+        "đã kết thúc".to_string(),
+        "hoàn tất".to_string(),
+        "cuộc hội thoại đã đóng".to_string(),
+        "đã được đóng".to_string(),
+        "đóng cuộc trò chuyện".to_string(),
+        "kết thúc cuộc trò chuyện".to_string(),
+        "conversation closed".to_string(),
+        "conversation ended".to_string(),
+        "this conversation has been closed".to_string(),
+        "chat closed".to_string(),
+        "chat ended".to_string(),
     ]
 }
