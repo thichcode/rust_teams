@@ -18,9 +18,11 @@ pub struct UpdateInfo {
     pub body: String,
 }
 
-/// Check if a newer version is available on GitHub Releases
+/// Check if a newer version is available on GitHub Releases (main app only, v* tags)
 pub fn check_for_update() -> Result<Option<UpdateInfo>, String> {
-    let url = format!("https://api.github.com/repos/{}/releases/latest", REPO);
+    // Use releases list (not /latest) to filter for main app tags (v* only)
+    // Mini app uses rteams-meeting-assistant-v* tags which would be "latest" but wrong app
+    let url = format!("https://api.github.com/repos/{}/releases?per_page=10", REPO);
 
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(15))
@@ -50,21 +52,26 @@ pub fn check_for_update() -> Result<Option<UpdateInfo>, String> {
         return Err(format!("GitHub API returned status: {}", response.status()));
     }
 
-    let release: serde_json::Value = response
+    let releases: serde_json::Value = response
         .json()
         .map_err(|e| format!("Failed to parse response: {}", e))?;
 
-       let tag_name = release["tag_name"]
+    // Find first release with main app tag (vX.Y.Z)
+    let release = releases.as_array()
+        .ok_or("Invalid releases response")?
+        .iter()
+        .find(|r| {
+            r["tag_name"].as_str()
+                .map(|t| t.starts_with('v') && t[1..].chars().next().map_or(false, |c| c.is_ascii_digit()))
+                .unwrap_or(false)
+        })
+        .ok_or("No main app release found")?;
+
+    let tag_name = release["tag_name"]
         .as_str()
         .ok_or("Missing tag_name")?
         .to_string();
-    let tag_name = if let Some(pos) = tag_name.rfind("-v") {
-        // Handle tags like "rteams-meeting-assistant-v0.4.4"
-        tag_name[pos+2..].to_string()
-    } else {
-        // Handle standard tags like "v1.2.3"
-        tag_name.trim_start_matches('v').to_string()
-    };
+    let tag_name = tag_name.trim_start_matches('v').to_string();
 
     let current = semver::Version::parse(CURRENT_VERSION)
         .map_err(|e| format!("Invalid current version: {}", e))?;
@@ -79,7 +86,7 @@ pub fn check_for_update() -> Result<Option<UpdateInfo>, String> {
     log::info!("Update available: v{} → v{}", CURRENT_VERSION, tag_name);
 
     // Find the exe asset - try multiple patterns
-    let download_url = find_download_url(&release, &tag_name)?;
+    let download_url = find_download_url(release, &tag_name)?;
 
     let body = release["body"]
         .as_str()
