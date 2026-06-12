@@ -107,6 +107,13 @@ impl CommandRegistry {
                 CommandResult { output: "Hello! I'm R Teams Bot. Type /help for available commands.".into() }
             }),
         );
+
+        self.register(
+            CommandInfo { name: "autoread", description: "Trigger auto-read cycle now", usage: "/autoread" },
+            Box::new(|_| {
+                CommandResult { output: "Auto-read cycle triggered".into() }
+            }),
+        );
     }
 
     pub fn commands(&self) -> &[CommandInfo] {

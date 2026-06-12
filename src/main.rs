@@ -239,7 +239,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 NewWindowResponse::Deny
             }
         })
-        .with_ipc_handler(move |message| {
+         .with_ipc_handler(move |message| {
             let body = message.body();
             if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&body) {
                 let msg_type = msg["type"].as_str().unwrap_or("");
@@ -263,6 +263,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                     if let Ok(guard) = WEBVIEW.lock() {
                         if let Some(WebViewPtr(ptr)) = *guard {
                             let wv = unsafe { &*ptr };
+                            // For autoread command, also trigger the JS function
+                            if cmd == "autoread" {
+                                let _ = wv.evaluate_script("processChats()");
+                            }
                             let js = format!(
                                 "window.dispatchEvent(new CustomEvent('rteams-bot-response', {{ detail: {{ output: '{}' }} }}));",
                                 result.output.replace('\\', "\\\\").replace('\'', "\\'"),
