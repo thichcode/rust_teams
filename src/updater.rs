@@ -60,12 +60,16 @@ pub fn check_for_update() -> Result<Option<UpdateInfo>, String> {
         .map_err(|e| format!("Failed to parse response: {}", e))?;
 
     // Find first release with main app tag (vX.Y.Z)
-    let release = releases.as_array()
+    let release = releases
+        .as_array()
         .ok_or("Invalid releases response")?
         .iter()
         .find(|r| {
-            r["tag_name"].as_str()
-                .map(|t| t.starts_with('v') && t[1..].chars().next().is_some_and(|c| c.is_ascii_digit()))
+            r["tag_name"]
+                .as_str()
+                .map(|t| {
+                    t.starts_with('v') && t[1..].chars().next().is_some_and(|c| c.is_ascii_digit())
+                })
                 .unwrap_or(false)
         })
         .ok_or("No main app release found")?;
@@ -161,7 +165,9 @@ fn find_checksum_url(release: &serde_json::Value, tag: &str) -> Option<String> {
             if let Some(name) = asset["name"].as_str()
                 && name == "rust_teams-windows-x64.exe.sha256"
             {
-                return asset["browser_download_url"].as_str().map(|s| s.to_string());
+                return asset["browser_download_url"]
+                    .as_str()
+                    .map(|s| s.to_string());
             }
         }
     }
@@ -199,16 +205,21 @@ pub fn download_and_install(update: &UpdateInfo) -> Result<(), String> {
 
     // Fetch expected SHA256 checksum before installing anything (best-effort:
     // older releases may not publish a checksum asset yet).
-    let expected_checksum = update
-        .checksum_url
-        .as_deref()
-        .and_then(|url| match fetch_checksum(&client, url) {
-            Ok(sum) => Some(sum),
-            Err(e) => {
-                log::warn!("Could not fetch checksum ({}), skipping checksum verification: {}", url, e);
-                None
-            }
-        });
+    let expected_checksum =
+        update
+            .checksum_url
+            .as_deref()
+            .and_then(|url| match fetch_checksum(&client, url) {
+                Ok(sum) => Some(sum),
+                Err(e) => {
+                    log::warn!(
+                        "Could not fetch checksum ({}), skipping checksum verification: {}",
+                        url,
+                        e
+                    );
+                    None
+                }
+            });
 
     // Download with retry
     let mut last_error = String::new();
@@ -238,7 +249,10 @@ pub fn download_and_install(update: &UpdateInfo) -> Result<(), String> {
                 last_error = e;
                 fs::remove_file(&temp_exe).ok();
                 if attempt < MAX_RETRIES {
-                    println!("⚠️  Download failed, retrying in {}s...", RETRY_DELAY_MS / 1000);
+                    println!(
+                        "⚠️  Download failed, retrying in {}s...",
+                        RETRY_DELAY_MS / 1000
+                    );
                     std::thread::sleep(Duration::from_millis(RETRY_DELAY_MS));
                 }
             }
@@ -260,7 +274,10 @@ fn fetch_checksum(client: &reqwest::blocking::Client, url: &str) -> Result<Strin
         .map_err(|e| format!("Failed to fetch checksum: {}", e))?;
 
     if !response.status().is_success() {
-        return Err(format!("Checksum fetch returned status: {}", response.status()));
+        return Err(format!(
+            "Checksum fetch returned status: {}",
+            response.status()
+        ));
     }
 
     let text = response
@@ -311,7 +328,10 @@ fn download_file(
         .map_err(|e| format!("Failed to start download: {}", e))?;
 
     if !response.status().is_success() {
-        return Err(format!("Download failed with status: {}", response.status()));
+        return Err(format!(
+            "Download failed with status: {}",
+            response.status()
+        ));
     }
 
     let mut file = fs::File::create(path).map_err(|e| format!("Failed to create file: {}", e))?;
@@ -341,8 +361,7 @@ fn download_file(
     }
     println!();
 
-    file.flush()
-        .map_err(|e| format!("Flush error: {}", e))?;
+    file.flush().map_err(|e| format!("Flush error: {}", e))?;
     drop(file);
 
     Ok(total_bytes)
@@ -364,8 +383,7 @@ fn validate_download(path: &PathBuf, expected_sha256: Option<&str>) -> Result<()
     }
 
     // Check PE header (Windows executable)
-    let mut file =
-        fs::File::open(path).map_err(|e| format!("Failed to open file: {}", e))?;
+    let mut file = fs::File::open(path).map_err(|e| format!("Failed to open file: {}", e))?;
     let mut header = [0u8; 2];
     file.read_exact(&mut header)
         .map_err(|e| format!("Failed to read header: {}", e))?;
@@ -409,8 +427,7 @@ fn install_update(
         .map_err(|e| format!("Failed to backup current exe: {}", e))?;
 
     // Move new exe to current location
-    fs::rename(temp_exe, current_exe)
-        .map_err(|e| format!("Failed to replace exe: {}", e))?;
+    fs::rename(temp_exe, current_exe).map_err(|e| format!("Failed to replace exe: {}", e))?;
 
     println!("✅ Update installed successfully!");
     println!("🔄 Restarting...");

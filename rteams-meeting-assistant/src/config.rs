@@ -42,7 +42,7 @@ impl Default for Config {
             translator_model: "qwen2.5:3b".to_string(),
             suggester_model: "qwen2.5:3b".to_string(),
             notes_dir: String::new(),
-    toggle_hotkey: "Ctrl+Space".to_string(),
+            toggle_hotkey: "Ctrl+Space".to_string(),
         }
     }
 }

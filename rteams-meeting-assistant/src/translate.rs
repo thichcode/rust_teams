@@ -14,8 +14,16 @@ pub struct OllamaTranslator {
 
 impl OllamaTranslator {
     pub fn new(api_url: &str, model: &str) -> Self {
-        let model = if model.is_empty() { "llama3".to_string() } else { model.to_string() };
-        Self { client: reqwest::Client::new(), api_url: api_url.to_string(), model }
+        let model = if model.is_empty() {
+            "llama3".to_string()
+        } else {
+            model.to_string()
+        };
+        Self {
+            client: reqwest::Client::new(),
+            api_url: api_url.to_string(),
+            model,
+        }
     }
 }
 

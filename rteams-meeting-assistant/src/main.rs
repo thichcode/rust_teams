@@ -4,9 +4,9 @@ mod app;
 mod audio;
 mod config;
 mod diagnostics;
-mod export;
 mod diarize;
 mod download;
+mod export;
 mod hotkey;
 mod notes;
 mod stt;
@@ -44,7 +44,12 @@ fn main() -> eframe::Result<()> {
         native_options,
         Box::new(|cc| {
             let _ = &cc.egui_ctx;
-            Ok(Box::new(MeetingAssistantApp::new(cc, config, Some(tray_rx), Some(hotkey_rx))))
+            Ok(Box::new(MeetingAssistantApp::new(
+                cc,
+                config,
+                Some(tray_rx),
+                Some(hotkey_rx),
+            )))
         }),
     )
 }

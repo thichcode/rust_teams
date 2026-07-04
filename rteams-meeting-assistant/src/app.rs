@@ -10,6 +10,8 @@ use crate::diagnostics::{
 };
 use crate::diarize::SpeakerLabeler;
 use crate::download::WhisperDownloader;
+use crate::export;
+use crate::hotkey;
 use crate::notes::{list_notes, save_transcript, spawn_summarize};
 use crate::stt::LocalWhisper;
 use crate::stt::SttProvider;
@@ -17,10 +19,8 @@ use crate::suggest::OllamaSuggester;
 use crate::suggest::Suggester;
 use crate::translate::OllamaTranslator;
 use crate::translate::Translator;
-use crate::vad::Vad;
 use crate::tray;
-use crate::export;
-use crate::hotkey;
+use crate::vad::Vad;
 
 #[derive(Clone, PartialEq)]
 enum RightTab {
@@ -81,7 +81,12 @@ pub struct MeetingAssistantApp {
 }
 
 impl MeetingAssistantApp {
-    pub fn new(_cc: &eframe::CreationContext<'_>, config: Config, tray_rx: Option<mpsc::Receiver<tray::TrayCommand>>, hotkey_rx: Option<mpsc::Receiver<hotkey::HotkeyEvent>>) -> Self {
+    pub fn new(
+        _cc: &eframe::CreationContext<'_>,
+        config: Config,
+        tray_rx: Option<mpsc::Receiver<tray::TrayCommand>>,
+        hotkey_rx: Option<mpsc::Receiver<hotkey::HotkeyEvent>>,
+    ) -> Self {
         let (tx, rx) = mpsc::channel();
         let (stx, srx) = mpsc::channel();
         let (dtx, drx) = mpsc::channel();
@@ -160,10 +165,8 @@ impl MeetingAssistantApp {
             .name("audio-pipeline".to_string())
             .spawn(move || {
                 let rt = tokio::runtime::Runtime::new().unwrap();
-                let mut audio = AudioCapture::new(
-                    &cfg.audio_input_device,
-                    cfg.capture_system_audio,
-                );
+                let mut audio =
+                    AudioCapture::new(&cfg.audio_input_device, cfg.capture_system_audio);
                 if let Err(e) = audio.start() {
                     log::error!("audio start: {e}");
                     return;
@@ -492,32 +495,31 @@ impl eframe::App for MeetingAssistantApp {
             });
         });
 
-        if self.is_recording && self.start_time.is_some() {
-            if self.last_auto_save.elapsed() >= std::time::Duration::from_secs(300) {
-                if !self.transcript_history.is_empty() {
-                    if let Ok(path) =
-                        save_transcript(&self.transcript_history, &self.config.notes_dir)
-                    {
-                        self.saved_notes.push(path.clone());
-                        self.status_message = format!(
-                            "Auto-saved: {}",
-                            path.file_name().unwrap().to_string_lossy()
-                        );
-                    }
-                }
-                self.last_auto_save = std::time::Instant::now();
+        if self.is_recording
+            && self.start_time.is_some()
+            && self.last_auto_save.elapsed() >= std::time::Duration::from_secs(300)
+        {
+            if !self.transcript_history.is_empty()
+                && let Ok(path) = save_transcript(&self.transcript_history, &self.config.notes_dir)
+            {
+                self.saved_notes.push(path.clone());
+                self.status_message = format!(
+                    "Auto-saved: {}",
+                    path.file_name().unwrap().to_string_lossy()
+                );
             }
+            self.last_auto_save = std::time::Instant::now();
         }
 
         egui::TopBottomPanel::bottom("controls").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                if self.is_recording {
-                    if let Some(start) = self.start_time {
-                        let elapsed = start.elapsed();
-                        let mins = elapsed.as_secs() / 60;
-                        let secs = elapsed.as_secs() % 60;
-                        ui.label(format!("{:02}:{:02}", mins, secs));
-                    }
+                if self.is_recording
+                    && let Some(start) = self.start_time
+                {
+                    let elapsed = start.elapsed();
+                    let mins = elapsed.as_secs() / 60;
+                    let secs = elapsed.as_secs() % 60;
+                    ui.label(format!("{:02}:{:02}", mins, secs));
                 }
 
                 let btn_label = if self.is_recording { "Stop" } else { "Start" };
@@ -529,37 +531,42 @@ impl eframe::App for MeetingAssistantApp {
                     }
                 }
 
-                if ui.button("Save Transcript").clicked() {
-                    if !self.transcript_history.is_empty() {
-                        if let Ok(path) =
-                            save_transcript(&self.transcript_history, &self.config.notes_dir)
-                        {
-                            self.saved_notes.push(path.clone());
-                            self.status_message =
-                                format!("Saved: {}", path.file_name().unwrap().to_string_lossy());
-                        }
-                    }
+                if ui.button("Save Transcript").clicked()
+                    && !self.transcript_history.is_empty()
+                    && let Ok(path) =
+                        save_transcript(&self.transcript_history, &self.config.notes_dir)
+                {
+                    self.saved_notes.push(path.clone());
+                    self.status_message =
+                        format!("Saved: {}", path.file_name().unwrap().to_string_lossy());
                 }
 
-                if ui.button("Export TXT").clicked() {
-                    if !self.transcript_history.is_empty() {
-                        if let Ok(path) = export::export_txt(&self.transcript_history, std::path::Path::new(&self.config.notes_dir)) {
-                            self.status_message = format!("Exported: {}", path.file_name().unwrap().to_string_lossy());
-                        }
-                    }
+                if ui.button("Export TXT").clicked()
+                    && !self.transcript_history.is_empty()
+                    && let Ok(path) = export::export_txt(
+                        &self.transcript_history,
+                        std::path::Path::new(&self.config.notes_dir),
+                    )
+                {
+                    self.status_message =
+                        format!("Exported: {}", path.file_name().unwrap().to_string_lossy());
                 }
-                if ui.button("Export MD").clicked() {
-                    if !self.transcript_history.is_empty() {
-                        if let Ok(path) = export::export_md(&self.transcript_history, std::path::Path::new(&self.config.notes_dir)) {
-                            self.status_message = format!("Exported: {}", path.file_name().unwrap().to_string_lossy());
-                        }
-                    }
+                if ui.button("Export MD").clicked()
+                    && !self.transcript_history.is_empty()
+                    && let Ok(path) = export::export_md(
+                        &self.transcript_history,
+                        std::path::Path::new(&self.config.notes_dir),
+                    )
+                {
+                    self.status_message =
+                        format!("Exported: {}", path.file_name().unwrap().to_string_lossy());
                 }
 
-                if self.config.whisper_binary.is_empty() && !self.is_downloading {
-                    if ui.button("Download Whisper").clicked() {
-                        self.start_download();
-                    }
+                if self.config.whisper_binary.is_empty()
+                    && !self.is_downloading
+                    && ui.button("Download Whisper").clicked()
+                {
+                    self.start_download();
                 }
 
                 if self.is_downloading {
@@ -573,12 +580,15 @@ impl eframe::App for MeetingAssistantApp {
         });
 
         ctx.input_mut(|i| {
-            if i.consume_key(egui::Modifiers::CTRL, egui::Key::S) {
-                if !self.transcript_history.is_empty() {
-                    if let Ok(path) = export::export_txt(&self.transcript_history, std::path::Path::new(&self.config.notes_dir)) {
-                        self.status_message = format!("Saved: {}", path.file_name().unwrap().to_string_lossy());
-                    }
-                }
+            if i.consume_key(egui::Modifiers::CTRL, egui::Key::S)
+                && !self.transcript_history.is_empty()
+                && let Ok(path) = export::export_txt(
+                    &self.transcript_history,
+                    std::path::Path::new(&self.config.notes_dir),
+                )
+            {
+                self.status_message =
+                    format!("Saved: {}", path.file_name().unwrap().to_string_lossy());
             }
         });
 
@@ -716,7 +726,10 @@ impl MeetingAssistantApp {
                 self.audio_input_devices = AudioCapture::input_device_names();
             }
         });
-        ui.checkbox(&mut self.config.capture_system_audio, "Capture System Audio");
+        ui.checkbox(
+            &mut self.config.capture_system_audio,
+            "Capture System Audio",
+        );
 
         ui.label("Source Language (e.g. en):");
         ui.text_edit_singleline(&mut self.config.source_lang);

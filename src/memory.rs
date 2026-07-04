@@ -104,10 +104,7 @@ pub fn build_browser_args(cfg: &MemoryOptimization) -> String {
         return String::new();
     }
 
-    let mut flags: Vec<String> = vec![
-        "--no-first-run".into(),
-        "--no-default-browser-check".into(),
-    ];
+    let mut flags: Vec<String> = vec!["--no-first-run".into(), "--no-default-browser-check".into()];
 
     if cfg.disable_gpu {
         flags.push("--disable-gpu".into());
@@ -147,7 +144,10 @@ pub fn build_browser_args(cfg: &MemoryOptimization) -> String {
     }
 
     if cfg.renderer_process_limit > 0 {
-        flags.push(format!("--renderer-process-limit={}", cfg.renderer_process_limit));
+        flags.push(format!(
+            "--renderer-process-limit={}",
+            cfg.renderer_process_limit
+        ));
     }
     if cfg.js_max_old_space_mb > 0 {
         flags.push(format!(
@@ -184,16 +184,70 @@ pub fn log_summary(cfg: &MemoryOptimization) {
 
     let profile = detect_profile(cfg);
     log::info!("Memory optimization: ON ({profile})");
-    log::info!("  GPU:                  {}", if cfg.disable_gpu { "disabled" } else { "enabled" });
-    log::info!("  Background networking:{}", if cfg.disable_background_networking { "off" } else { "on" });
-    log::info!("  Breakpad:             {}", if cfg.disable_breakpad { "off" } else { "on" });
-    log::info!("  Sync:                 {}", if cfg.disable_sync { "off" } else { "on" });
-    log::info!("  Translate:            {}", if cfg.disable_translate { "off" } else { "on" });
-    log::info!("  Extensions:           {}", if cfg.disable_extensions { "off" } else { "on" });
-    log::info!("  Component update:     {}", if cfg.disable_component_update { "off" } else { "on" });
-    log::info!("  Domain reliability:   {}", if cfg.disable_domain_reliability { "off" } else { "on" });
-    log::info!("  BackForwardCache:     {}", if cfg.disable_back_forward_cache { "off" } else { "on" });
-    log::info!("  Site isolation:       {}", if cfg.disable_site_isolation { "off (Spectre OFF)" } else { "on" });
+    log::info!(
+        "  GPU:                  {}",
+        if cfg.disable_gpu {
+            "disabled"
+        } else {
+            "enabled"
+        }
+    );
+    log::info!(
+        "  Background networking:{}",
+        if cfg.disable_background_networking {
+            "off"
+        } else {
+            "on"
+        }
+    );
+    log::info!(
+        "  Breakpad:             {}",
+        if cfg.disable_breakpad { "off" } else { "on" }
+    );
+    log::info!(
+        "  Sync:                 {}",
+        if cfg.disable_sync { "off" } else { "on" }
+    );
+    log::info!(
+        "  Translate:            {}",
+        if cfg.disable_translate { "off" } else { "on" }
+    );
+    log::info!(
+        "  Extensions:           {}",
+        if cfg.disable_extensions { "off" } else { "on" }
+    );
+    log::info!(
+        "  Component update:     {}",
+        if cfg.disable_component_update {
+            "off"
+        } else {
+            "on"
+        }
+    );
+    log::info!(
+        "  Domain reliability:   {}",
+        if cfg.disable_domain_reliability {
+            "off"
+        } else {
+            "on"
+        }
+    );
+    log::info!(
+        "  BackForwardCache:     {}",
+        if cfg.disable_back_forward_cache {
+            "off"
+        } else {
+            "on"
+        }
+    );
+    log::info!(
+        "  Site isolation:       {}",
+        if cfg.disable_site_isolation {
+            "off (Spectre OFF)"
+        } else {
+            "on"
+        }
+    );
     if cfg.renderer_process_limit > 0 {
         log::info!("  Renderer process limit: {}", cfg.renderer_process_limit);
     }

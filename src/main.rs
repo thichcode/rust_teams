@@ -13,21 +13,21 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use tao::event::{Event, StartCause, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoop};
-use tao::window::{WindowBuilder, Icon};
 #[cfg(target_os = "windows")]
 use tao::platform::windows::WindowExtWindows;
-use wry::{WebViewBuilder, WebViewBuilderExtWindows, NewWindowResponse, NewWindowFeatures};
+use tao::window::{Icon, WindowBuilder};
+use wry::{NewWindowFeatures, NewWindowResponse, WebViewBuilder, WebViewBuilderExtWindows};
 
 use app::AppConfig;
+use bot::{CommandRegistry, parse_command};
 use config::ConfigManager;
 use ui::auto_read::get_auto_read_script;
 use ui::badge::{parse_unread_count, play_notification_sound, update_taskbar_badge};
-use ui::browser::open_url_smart;
 use ui::browser::open_in_new_window;
+use ui::browser::open_url_smart;
+use ui::command_bar::get_command_bar_script;
 use ui::console::auto_hide_console;
 use ui::performance::get_all_optimization_scripts;
-use ui::command_bar::get_command_bar_script;
-use bot::{CommandRegistry, parse_command};
 
 /// Global cached CommandRegistry — created once on first IPC call, reused for all subsequent commands.
 static BOT_REGISTRY: OnceLock<CommandRegistry> = OnceLock::new();
@@ -67,7 +67,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         Ok(Some(update)) => {
             println!();
             println!("╔══════════════════════════════════════════════════════════════╗");
-            println!("║  UPDATE AVAILABLE: v{} → v{}", updater::current_version(), update.version);
+            println!(
+                "║  UPDATE AVAILABLE: v{} → v{}",
+                updater::current_version(),
+                update.version
+            );
             println!("╚══════════════════════════════════════════════════════════════╝");
             println!();
             println!("   Download URL: {}", update.download_url);
@@ -82,7 +86,10 @@ fn main() -> Result<(), Box<dyn Error>> {
             updater::UpdateCheck::Available(update)
         }
         Ok(None) => {
-            println!("✅ Already on latest version (v{})", updater::current_version());
+            println!(
+                "✅ Already on latest version (v{})",
+                updater::current_version()
+            );
             updater::UpdateCheck::Latest
         }
         Err(e) => {
@@ -125,12 +132,13 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Create event loop and window
     let event_loop = EventLoop::new();
-    let mut window_builder = WindowBuilder::new()
-        .with_title("R Teams")
-        .with_inner_size(tao::dpi::LogicalSize::new(
-            config.window_settings.width as f64,
-            config.window_settings.height as f64,
-        ));
+    let mut window_builder =
+        WindowBuilder::new()
+            .with_title("R Teams")
+            .with_inner_size(tao::dpi::LogicalSize::new(
+                config.window_settings.width as f64,
+                config.window_settings.height as f64,
+            ));
 
     // Set window icon from embedded resource
     if let Ok(icon) = load_window_icon() {
@@ -289,12 +297,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         .build(&window)
         .map_err(|e| -> Box<dyn Error> { format!("Failed to create WebView: {}", e).into() })?;
 
+    #[allow(clippy::arc_with_non_send_sync)]
     let wv_arc = Arc::new(webview);
     let _ = WEBVIEW.set(WebViewHandle(wv_arc.clone()));
     let _webview_keepalive = wv_arc;
 
     // Use cached update check result (no second API call)
-    let version_info = UPDATE_RESULT.get()
+    let version_info = UPDATE_RESULT
+        .get()
         .map(|r| r.version_info())
         .unwrap_or_else(|| format!("📦 Version: v{}", updater::current_version()));
 
@@ -364,9 +374,7 @@ fn load_window_icon() -> Result<Icon, Box<dyn Error>> {
             // Simple "R" letter approximation
             let is_r = (8..=24).contains(&x)
                 && (6..=26).contains(&y)
-                && ((x <= 12)
-                    || (y <= 10)
-                    || (y >= 18 && x >= 12 && (x + y) <= 32));
+                && ((x <= 12) || (y <= 10) || (y >= 18 && x >= 12 && (x + y) <= 32));
 
             if is_r {
                 // White for "R"
@@ -376,7 +384,7 @@ fn load_window_icon() -> Result<Icon, Box<dyn Error>> {
                 rgba[idx + 3] = 255;
             } else {
                 // Teams purple background
-                rgba[idx] = 98;  // R
+                rgba[idx] = 98; // R
                 rgba[idx + 1] = 100; // G
                 rgba[idx + 2] = 167; // B
                 rgba[idx + 3] = 255; // A
@@ -384,8 +392,8 @@ fn load_window_icon() -> Result<Icon, Box<dyn Error>> {
         }
     }
 
-    let icon = Icon::from_rgba(rgba, size, size)
-        .map_err(|e| format!("Failed to create icon: {}", e))?;
+    let icon =
+        Icon::from_rgba(rgba, size, size).map_err(|e| format!("Failed to create icon: {}", e))?;
 
     Ok(icon)
 }

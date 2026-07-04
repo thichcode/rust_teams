@@ -294,7 +294,8 @@ impl DiagnosticsRunner {
             return result;
         }
 
-        let samples = match capture_mic_samples(&config.audio_input_device, Duration::from_secs(3)) {
+        let samples = match capture_mic_samples(&config.audio_input_device, Duration::from_secs(3))
+        {
             Ok(samples) => samples,
             Err(e) => {
                 return DiagnosticResult::new(
@@ -583,10 +584,10 @@ fn capture_mic_samples(device_name: &str, duration: Duration) -> anyhow::Result<
     let stream = device.build_input_stream(
         &cfg,
         move |data: &[f32], _: &_| {
-            if recording_clone.load(Ordering::Relaxed) {
-                if let Ok(mut buf) = buffer_clone.lock() {
-                    buf.extend_from_slice(data);
-                }
+            if recording_clone.load(Ordering::Relaxed)
+                && let Ok(mut buf) = buffer_clone.lock()
+            {
+                buf.extend_from_slice(data);
             }
         },
         |e| log::error!("diagnostic mic stream error: {e}"),
@@ -636,11 +637,9 @@ fn capture_system_audio_samples(duration: Duration) -> anyhow::Result<Vec<f32>> 
     let mut samples = Vec::new();
     while started.elapsed() < duration {
         let _ = h_event.wait_for_event(100);
-        loop {
-            match cap.read_from_device_to_deque(&mut deque) {
-                Ok(_) if deque.is_empty() => break,
-                Ok(_) => {}
-                Err(_) => break,
+        while cap.read_from_device_to_deque(&mut deque).is_ok() {
+            if deque.is_empty() {
+                break;
             }
         }
         while deque.len() >= 4 {

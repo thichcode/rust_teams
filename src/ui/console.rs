@@ -7,11 +7,11 @@ pub fn auto_hide_console(delay_ms: u64) {
     {
         std::thread::spawn(move || {
             std::thread::sleep(std::time::Duration::from_millis(delay_ms));
-            
+
             unsafe {
                 use winapi::um::wincon::GetConsoleWindow;
-                use winapi::um::winuser::{ShowWindow, SW_HIDE};
-                
+                use winapi::um::winuser::{SW_HIDE, ShowWindow};
+
                 let console_window = GetConsoleWindow();
                 if !console_window.is_null() {
                     ShowWindow(console_window, SW_HIDE);
@@ -29,8 +29,8 @@ pub fn show_console() {
     {
         unsafe {
             use winapi::um::wincon::GetConsoleWindow;
-            use winapi::um::winuser::{ShowWindow, SW_SHOW};
-            
+            use winapi::um::winuser::{SW_SHOW, ShowWindow};
+
             let console_window = GetConsoleWindow();
             if !console_window.is_null() {
                 ShowWindow(console_window, SW_SHOW);

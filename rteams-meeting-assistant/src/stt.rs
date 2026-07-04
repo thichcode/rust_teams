@@ -43,11 +43,19 @@ impl SttProvider for LocalWhisper {
         let tmp_out = tmp_wav.with_extension("txt");
         std::fs::write(&tmp_wav, &wav)?;
 
-        let lang = if language.is_empty() { "auto" } else { language };
+        let lang = if language.is_empty() {
+            "auto"
+        } else {
+            language
+        };
         let output = tokio::process::Command::new(&self.whisper_bin)
-            .arg("-m").arg(&self.model_path)
-            .arg("-f").arg(tmp_wav.as_os_str())
-            .arg("-otxt").arg("-l").arg(lang)
+            .arg("-m")
+            .arg(&self.model_path)
+            .arg("-f")
+            .arg(tmp_wav.as_os_str())
+            .arg("-otxt")
+            .arg("-l")
+            .arg(lang)
             .arg("--no-prints")
             .stdin(Stdio::null())
             .output()

@@ -1,6 +1,6 @@
+use chrono::Local;
 use std::fs;
 use std::path::{Path, PathBuf};
-use chrono::Local;
 
 pub fn export_txt(history: &[String], dir: &Path) -> std::io::Result<PathBuf> {
     let ts = Local::now().format("%Y%m%d-%H%M%S");

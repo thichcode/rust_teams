@@ -3,7 +3,13 @@ use async_trait::async_trait;
 
 #[async_trait]
 pub trait Suggester: Send + Sync {
-    async fn suggest(&self, context: &str, latest: &str, lang: &str, n: usize) -> Result<Vec<String>>;
+    async fn suggest(
+        &self,
+        context: &str,
+        latest: &str,
+        lang: &str,
+        n: usize,
+    ) -> Result<Vec<String>>;
 }
 
 pub struct OllamaSuggester {
@@ -24,7 +30,13 @@ impl OllamaSuggester {
 
 #[async_trait]
 impl Suggester for OllamaSuggester {
-    async fn suggest(&self, context: &str, latest: &str, lang: &str, n: usize) -> Result<Vec<String>> {
+    async fn suggest(
+        &self,
+        context: &str,
+        latest: &str,
+        lang: &str,
+        n: usize,
+    ) -> Result<Vec<String>> {
         let prompt = format!(
             "You are a meeting assistant. Based on the conversation, suggest 3 short replies in {lang}: a professional explanation, a simple easy-to-understand explanation, and a quick clarification. \
              Format as a JSON array of strings.\n\nContext:\n{context}\n\nLatest: \"{latest}\""
@@ -51,33 +63,55 @@ fn parse_suggestions(raw: &str, n: usize) -> Vec<String> {
     let trimmed = raw.trim();
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
         if let Some(arr) = v.as_array() {
-            let out: Vec<String> = arr.iter()
+            let out: Vec<String> = arr
+                .iter()
                 .filter_map(|x| x.as_str().map(|s| s.trim().to_string()))
                 .filter(|s| !s.is_empty())
-                .take(n).collect();
-            if !out.is_empty() { return out; }
+                .take(n)
+                .collect();
+            if !out.is_empty() {
+                return out;
+            }
         }
         if let Some(arr) = v.get("suggestions").and_then(|x| x.as_array()) {
-            let out: Vec<String> = arr.iter()
+            let out: Vec<String> = arr
+                .iter()
                 .filter_map(|x| x.as_str().map(|s| s.trim().to_string()))
                 .filter(|s| !s.is_empty())
-                .take(n).collect();
-            if !out.is_empty() { return out; }
+                .take(n)
+                .collect();
+            if !out.is_empty() {
+                return out;
+            }
         }
     }
     let mut out: Vec<String> = Vec::new();
     for line in trimmed.lines() {
         let s = line.trim();
-        if s.is_empty() { continue; }
-        let prefix = s.trim_start_matches(|c: char| c.is_ascii_digit() || c == '.' || c == ')' || c == '-' || c == '*' || c == '•');
+        if s.is_empty() {
+            continue;
+        }
+        let prefix = s.trim_start_matches(|c: char| {
+            c.is_ascii_digit() || c == '.' || c == ')' || c == '-' || c == '*' || c == '•'
+        });
         let cleaned = if prefix != s { prefix.trim() } else { s };
         if !cleaned.is_empty() && cleaned.len() > 1 {
             out.push(cleaned.to_string());
-            if out.len() >= n { break; }
+            if out.len() >= n {
+                break;
+            }
         }
     }
-    if !out.is_empty() { return out; }
-    trimmed.lines().map(str::trim).filter(|s| !s.is_empty()).take(n).map(str::to_string).collect()
+    if !out.is_empty() {
+        return out;
+    }
+    trimmed
+        .lines()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .take(n)
+        .map(str::to_string)
+        .collect()
 }
 
 #[cfg(test)]

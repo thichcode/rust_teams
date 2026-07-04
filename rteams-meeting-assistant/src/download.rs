@@ -26,15 +26,11 @@ fn latest_release_tag() -> Result<String> {
 
 /// Build download URLs for the latest whisper.cpp release.
 fn binary_url(tag: &str) -> String {
-    format!(
-        "https://github.com/{BIN_REPO}/releases/download/{tag}/whisper-bin-x64.zip"
-    )
+    format!("https://github.com/{BIN_REPO}/releases/download/{tag}/whisper-bin-x64.zip")
 }
 
 fn model_url() -> String {
-    format!(
-        "https://huggingface.co/{MODEL_REPO}/resolve/main/{MODEL_FILE}"
-    )
+    format!("https://huggingface.co/{MODEL_REPO}/resolve/main/{MODEL_FILE}")
 }
 
 pub struct WhisperDownloader {

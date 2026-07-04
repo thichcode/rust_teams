@@ -50,9 +50,6 @@ impl TrayManager {
             }
         });
 
-        Self {
-            _tray: tray,
-            rx,
-        }
+        Self { _tray: tray, rx }
     }
 }

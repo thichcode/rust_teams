@@ -5,7 +5,7 @@ use anyhow::Result;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, SampleRate, Stream, StreamConfig};
 use wasapi::{
-    get_default_device, AudioCaptureClient, Direction, Handle, SampleType, StreamMode, WaveFormat,
+    AudioCaptureClient, Direction, Handle, SampleType, StreamMode, WaveFormat, get_default_device,
 };
 
 pub struct LoopbackHandle {
@@ -38,8 +38,14 @@ fn start_wasapi_loopback(buffer: Arc<Mutex<Vec<f32>>>) -> Result<LoopbackHandle>
                 Err(_) => return,
             };
             let fmt = WaveFormat::new(32, 32, &SampleType::Float, 16000, 1, None);
-            let mode = StreamMode::EventsShared { autoconvert: true, buffer_duration_hns: 0 };
-            if client.initialize_client(&fmt, &Direction::Capture, &mode).is_err() {
+            let mode = StreamMode::EventsShared {
+                autoconvert: true,
+                buffer_duration_hns: 0,
+            };
+            if client
+                .initialize_client(&fmt, &Direction::Capture, &mode)
+                .is_err()
+            {
                 return;
             }
             let h_event: Handle = match client.set_get_eventhandle() {
@@ -55,14 +61,9 @@ fn start_wasapi_loopback(buffer: Arc<Mutex<Vec<f32>>>) -> Result<LoopbackHandle>
             let mut deque = std::collections::VecDeque::new();
             while !sf.load(Ordering::Relaxed) {
                 let _ = h_event.wait_for_event(100);
-                loop {
-                    match cap.read_from_device_to_deque(&mut deque) {
-                        Ok(_) => {
-                            if deque.is_empty() {
-                                break;
-                            }
-                        }
-                        Err(_) => break,
+                while cap.read_from_device_to_deque(&mut deque).is_ok() {
+                    if deque.is_empty() {
+                        break;
                     }
                 }
                 let n = deque.len() / 4;
@@ -78,7 +79,9 @@ fn start_wasapi_loopback(buffer: Arc<Mutex<Vec<f32>>>) -> Result<LoopbackHandle>
                                 samples.push(f32::from_bits(u32::from_le_bytes([b0, b1, b2, b3])));
                             }
                             _ => {
-                                log::error!("WASAPI loopback: incomplete frame, dropping {n} samples");
+                                log::error!(
+                                    "WASAPI loopback: incomplete frame, dropping {n} samples"
+                                );
                                 deque.clear();
                                 break;
                             }
@@ -91,7 +94,10 @@ fn start_wasapi_loopback(buffer: Arc<Mutex<Vec<f32>>>) -> Result<LoopbackHandle>
             }
             let _ = client.stop_stream();
         })?;
-    Ok(LoopbackHandle { stop_flag, join: Some(join) })
+    Ok(LoopbackHandle {
+        stop_flag,
+        join: Some(join),
+    })
 }
 
 pub struct AudioCapture {
@@ -134,7 +140,10 @@ impl AudioCapture {
             return Ok(());
         }
         {
-            let mut buf = self.buffer.lock().map_err(|e| anyhow::anyhow!("lock: {}", e))?;
+            let mut buf = self
+                .buffer
+                .lock()
+                .map_err(|e| anyhow::anyhow!("lock: {}", e))?;
             buf.clear();
         }
 
@@ -152,16 +161,18 @@ impl AudioCapture {
                 .build_input_stream(
                     &cfg,
                     move |data: &[f32], _: &_| {
-                        if rec.load(Ordering::Relaxed) {
-                            if let Ok(mut b) = buf.lock() {
-                                b.extend_from_slice(data);
-                            }
+                        if rec.load(Ordering::Relaxed)
+                            && let Ok(mut b) = buf.lock()
+                        {
+                            b.extend_from_slice(data);
                         }
                     },
                     |e| log::error!("mic stream error: {e}"),
                 )
                 .map_err(|e| anyhow::anyhow!("mic stream: {e}"))?;
-            stream.play().map_err(|e| anyhow::anyhow!("mic play: {e}"))?;
+            stream
+                .play()
+                .map_err(|e| anyhow::anyhow!("mic play: {e}"))?;
             self.mic_stream = Some(stream);
         }
 
@@ -186,11 +197,17 @@ impl AudioCapture {
         if let Some(h) = self.loopback_handle.take() {
             h.stop();
         }
-        self.buffer.lock().map(|mut b| std::mem::take(&mut *b)).unwrap_or_default()
+        self.buffer
+            .lock()
+            .map(|mut b| std::mem::take(&mut *b))
+            .unwrap_or_default()
     }
 
     pub fn drain_buffer(&mut self) -> Vec<f32> {
-        self.buffer.lock().map(|mut b| std::mem::take(&mut *b)).unwrap_or_default()
+        self.buffer
+            .lock()
+            .map(|mut b| std::mem::take(&mut *b))
+            .unwrap_or_default()
     }
 
     #[allow(dead_code)]

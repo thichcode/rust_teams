@@ -54,68 +54,112 @@ impl CommandRegistry {
         );
 
         self.register(
-            CommandInfo { name: "translate", description: "Toggle translate pipeline", usage: "/translate on|off" },
-            Box::new(|args| {
-                match args {
-                    "on" => CommandResult { output: "Translate: ON".into() },
-                    "off" => CommandResult { output: "Translate: OFF".into() },
-                    _ => CommandResult { output: "Usage: /translate on|off".into() },
+            CommandInfo {
+                name: "translate",
+                description: "Toggle translate pipeline",
+                usage: "/translate on|off",
+            },
+            Box::new(|args| match args {
+                "on" => CommandResult {
+                    output: "Translate: ON".into(),
+                },
+                "off" => CommandResult {
+                    output: "Translate: OFF".into(),
+                },
+                _ => CommandResult {
+                    output: "Usage: /translate on|off".into(),
+                },
+            }),
+        );
+
+        self.register(
+            CommandInfo {
+                name: "meeting",
+                description: "Toggle meeting notes",
+                usage: "/meeting start|stop",
+            },
+            Box::new(|args| match args {
+                "start" => CommandResult {
+                    output: "Meeting notes: STARTED".into(),
+                },
+                "stop" => CommandResult {
+                    output: "Meeting notes: STOPPED".into(),
+                },
+                _ => CommandResult {
+                    output: "Usage: /meeting start|stop".into(),
+                },
+            }),
+        );
+
+        self.register(
+            CommandInfo {
+                name: "config",
+                description: "Open config panel",
+                usage: "/config",
+            },
+            Box::new(|_| CommandResult {
+                output: "Opening config panel...".into(),
+            }),
+        );
+
+        self.register(
+            CommandInfo {
+                name: "clear",
+                description: "Clear dropdown output",
+                usage: "/clear",
+            },
+            Box::new(|_| CommandResult {
+                output: String::new(),
+            }),
+        );
+
+        self.register(
+            CommandInfo {
+                name: "time",
+                description: "Show current time",
+                usage: "/time",
+            },
+            Box::new(|_| {
+                let now = chrono::Local::now();
+                CommandResult {
+                    output: now.format("Time: %H:%M:%S").to_string(),
                 }
             }),
         );
 
         self.register(
-            CommandInfo { name: "meeting", description: "Toggle meeting notes", usage: "/meeting start|stop" },
-            Box::new(|args| {
-                match args {
-                    "start" => CommandResult { output: "Meeting notes: STARTED".into() },
-                    "stop" => CommandResult { output: "Meeting notes: STOPPED".into() },
-                    _ => CommandResult { output: "Usage: /meeting start|stop".into() },
+            CommandInfo {
+                name: "date",
+                description: "Show current date",
+                usage: "/date",
+            },
+            Box::new(|_| {
+                let now = chrono::Local::now();
+                CommandResult {
+                    output: now.format("Date: %A, %B %d, %Y").to_string(),
                 }
             }),
         );
 
         self.register(
-            CommandInfo { name: "config", description: "Open config panel", usage: "/config" },
-            Box::new(|_| {
-                CommandResult { output: "Opening config panel...".into() }
+            CommandInfo {
+                name: "hello",
+                description: "Welcome message",
+                usage: "/hello",
+            },
+            Box::new(|_| CommandResult {
+                output: "Hello! I'm R Teams Bot. Type /help for available commands.".into(),
             }),
         );
 
         self.register(
-            CommandInfo { name: "clear", description: "Clear dropdown output", usage: "/clear" },
-            Box::new(|_| {
-                CommandResult { output: String::new() }
-            }),
-        );
-
-        self.register(
-            CommandInfo { name: "time", description: "Show current time", usage: "/time" },
-            Box::new(|_| {
-                let now = chrono::Local::now();
-                CommandResult { output: now.format("Time: %H:%M:%S").to_string() }
-            }),
-        );
-
-        self.register(
-            CommandInfo { name: "date", description: "Show current date", usage: "/date" },
-            Box::new(|_| {
-                let now = chrono::Local::now();
-                CommandResult { output: now.format("Date: %A, %B %d, %Y").to_string() }
-            }),
-        );
-
-        self.register(
-            CommandInfo { name: "hello", description: "Welcome message", usage: "/hello" },
-            Box::new(|_| {
-                CommandResult { output: "Hello! I'm R Teams Bot. Type /help for available commands.".into() }
-            }),
-        );
-
-        self.register(
-            CommandInfo { name: "autoread", description: "Trigger auto-read cycle now", usage: "/autoread" },
-            Box::new(|_| {
-                CommandResult { output: "Auto-read cycle triggered".into() }
+            CommandInfo {
+                name: "autoread",
+                description: "Trigger auto-read cycle now",
+                usage: "/autoread",
+            },
+            Box::new(|_| CommandResult {
+                output: "Auto-read cycle triggered".into(),
             }),
         );
     }
@@ -128,7 +172,10 @@ impl CommandRegistry {
         match self.handlers.get(command) {
             Some(handler) => handler(args),
             None => CommandResult {
-                output: format!("Unknown command: /{}. Type /help for available commands.", command),
+                output: format!(
+                    "Unknown command: /{}. Type /help for available commands.",
+                    command
+                ),
             },
         }
     }

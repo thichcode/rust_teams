@@ -1,12 +1,9 @@
-use std::path::PathBuf;
-use std::sync::mpsc;
 use anyhow::Result;
 use chrono::{Local, Utc};
+use std::path::PathBuf;
+use std::sync::mpsc;
 
-pub fn save_transcript(
-    transcript: &[String],
-    notes_dir: &str,
-) -> Result<PathBuf> {
+pub fn save_transcript(transcript: &[String], notes_dir: &str) -> Result<PathBuf> {
     let dir = PathBuf::from(notes_dir);
     std::fs::create_dir_all(&dir)?;
     let path = dir.join(format!("meeting_{}.md", Utc::now().format("%Y%m%d_%H%M%S")));
@@ -38,7 +35,7 @@ pub fn list_notes(notes_dir: &str) -> Vec<PathBuf> {
         .into_iter()
         .flatten()
         .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().map_or(false, |ext| ext == "md"))
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "md"))
         .map(|e| e.path())
         .collect();
     entries.sort_by(|a, b| {
@@ -62,7 +59,7 @@ pub fn spawn_summarize(
             return;
         }
     };
-    let _ = rt.block_on(async {
+    rt.block_on(async {
         let body = serde_json::json!({
             "model": model,
             "prompt": format!(
@@ -81,11 +78,10 @@ pub fn spawn_summarize(
                     log::error!("Ollama summary: {err}");
                     return;
                 }
-                if let Ok(v) = resp.json::<serde_json::Value>().await {
-                    if let Some(text) = v["response"].as_str() {
+                if let Ok(v) = resp.json::<serde_json::Value>().await
+                    && let Some(text) = v["response"].as_str() {
                         let _ = tx.send(text.to_string());
                     }
-                }
             }
             Err(e) => {
                 log::error!("Ollama summary request failed: {e}");

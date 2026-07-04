@@ -1,7 +1,7 @@
-use std::sync::mpsc;
-use global_hotkey::GlobalHotKeyManager;
-use global_hotkey::hotkey::{HotKey, Modifiers, Code};
 use global_hotkey::GlobalHotKeyEvent;
+use global_hotkey::GlobalHotKeyManager;
+use global_hotkey::hotkey::{Code, HotKey, Modifiers};
+use std::sync::mpsc;
 
 pub enum HotkeyEvent {
     ToggleRecording,
