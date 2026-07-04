@@ -2,6 +2,23 @@
 
 All notable changes to R Teams.
 
+## [0.9.8] - 2026-07-04
+
+### Fixed
+- Cache GitHub update check result — 1 API call instead of 2 on startup
+- Replace unsafe WebView raw pointer with Arc + safe wrapper
+- Show actual memory profile name in logs (Safe/Balanced/Aggressive)
+- Rename `Diarizer` → `SpeakerLabeler` (round-robin, not real diarization)
+- Save window size + config on close via `GetWindowRect`
+- Remove duplicate export buttons in Notes tab
+- Handle WASAPI loopback byte parsing errors instead of silent `unwrap_or(0)`
+- Graceful fallback in notes sort when metadata access fails
+- Whisper download now fetches latest release tag from GitHub API
+- Global hotkey is now configurable via `toggle_hotkey` in settings
+- Lighter default Ollama models (`qwen2.5:3b` instead of 7b)
+- Deduplicate `ProjectDirs` via `Config::data_dir()` helper
+- Add tests for hotkey, VAD, suggest parser, translate, STT, speaker labeler
+
 ## [0.9.0] - 2026-06-05
 
 ### Added
