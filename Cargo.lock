@@ -4598,7 +4598,7 @@ dependencies = [
 
 [[package]]
 name = "rteams-meeting-assistant"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4624,7 +4624,7 @@ dependencies = [
 
 [[package]]
 name = "rust_teams"
-version = "0.9.7"
+version = "0.9.8"
 dependencies = [
  "anyhow",
  "chrono",
