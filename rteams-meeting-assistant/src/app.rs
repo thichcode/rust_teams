@@ -8,7 +8,7 @@ use crate::config::Config;
 use crate::diagnostics::{
     DiagnosticEvent, DiagnosticKind, DiagnosticStatus, DiagnosticsReport, DiagnosticsRunner,
 };
-use crate::diarize::Diarizer;
+use crate::diarize::SpeakerLabeler;
 use crate::download::WhisperDownloader;
 use crate::notes::{list_notes, save_transcript, spawn_summarize};
 use crate::stt::LocalWhisper;
@@ -173,7 +173,7 @@ impl MeetingAssistantApp {
                 let translator = OllamaTranslator::new(&cfg.ollama_endpoint, &cfg.translator_model);
                 let suggester = OllamaSuggester::new(&cfg.ollama_endpoint, &cfg.suggester_model);
                 let mut vad = Vad::new();
-                let mut diarizer = Diarizer::new();
+                let mut diarizer = SpeakerLabeler::new();
                 let mut rolling: Vec<String> = Vec::new();
 
                 let mut utterance: Vec<f32> = Vec::new();
@@ -280,10 +280,7 @@ impl MeetingAssistantApp {
         }
         self.is_downloading = true;
         self.status_message = "Downloading whisper...".to_string();
-        let data_dir = directories::ProjectDirs::from("com", "rteams", "RTeamsMeetingAssistant")
-            .map(|p| p.data_dir().to_path_buf())
-            .unwrap_or_else(|| std::env::temp_dir().join("rteams-meeting-assistant"));
-        let dl = WhisperDownloader::new(data_dir);
+        let dl = WhisperDownloader::new(crate::config::Config::data_dir());
         let tx = self.download_tx.clone();
         let tx2 = self.download_tx.clone();
         std::thread::spawn(move || {
@@ -337,11 +334,7 @@ impl eframe::App for MeetingAssistantApp {
             self.is_downloading = false;
             self.status_message = msg.clone();
             if msg.starts_with("Download complete") {
-                let data_dir =
-                    directories::ProjectDirs::from("com", "rteams", "RTeamsMeetingAssistant")
-                        .map(|p| p.data_dir().to_path_buf())
-                        .unwrap_or_else(|| std::env::temp_dir().join("rteams-meeting-assistant"));
-                let dl = WhisperDownloader::new(data_dir);
+                let dl = WhisperDownloader::new(crate::config::Config::data_dir());
                 let bp = dl.bin_path().to_string_lossy().to_string();
                 let mp = dl.model_path().to_string_lossy().to_string();
                 if self.config.whisper_binary.is_empty() {
@@ -623,20 +616,6 @@ fn notes_tab(ui: &mut egui::Ui, app: &mut MeetingAssistantApp) {
         if ui.button("Open Folder").clicked() {
             let dir = &app.config.notes_dir;
             let _ = std::process::Command::new("explorer").arg(dir).spawn();
-        }
-        if ui.button("Export TXT").clicked() {
-            if !app.transcript_history.is_empty() {
-                if let Ok(path) = export::export_txt(&app.transcript_history, std::path::Path::new(&app.config.notes_dir)) {
-                    app.status_message = format!("Exported: {}", path.file_name().unwrap().to_string_lossy());
-                }
-            }
-        }
-        if ui.button("Export MD").clicked() {
-            if !app.transcript_history.is_empty() {
-                if let Ok(path) = export::export_md(&app.transcript_history, std::path::Path::new(&app.config.notes_dir)) {
-                    app.status_message = format!("Exported: {}", path.file_name().unwrap().to_string_lossy());
-                }
-            }
         }
     });
 

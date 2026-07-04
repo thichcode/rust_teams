@@ -15,10 +15,18 @@ pub struct Config {
     pub translator_model: String,
     pub suggester_model: String,
     pub notes_dir: String,
+    /// Global hotkey for toggle recording (e.g. "Ctrl+Space", "Alt+R").
+    /// Set to empty string to disable.
+    #[serde(default = "default_hotkey")]
+    pub toggle_hotkey: String,
 }
 
 fn default_capture_system_audio() -> bool {
     true
+}
+
+fn default_hotkey() -> String {
+    "Ctrl+Space".to_string()
 }
 
 impl Default for Config {
@@ -31,9 +39,10 @@ impl Default for Config {
             capture_system_audio: true,
             source_lang: "en".to_string(),
             target_lang: "vi".to_string(),
-            translator_model: "qwen2.5:7b".to_string(),
-            suggester_model: "gemma3:4b".to_string(),
+            translator_model: "qwen2.5:3b".to_string(),
+            suggester_model: "qwen2.5:3b".to_string(),
             notes_dir: String::new(),
+    toggle_hotkey: "Ctrl+Space".to_string(),
         }
     }
 }
@@ -47,6 +56,12 @@ impl Config {
 
     pub fn config_path() -> PathBuf {
         Self::config_dir().join("config.json")
+    }
+
+    pub fn data_dir() -> PathBuf {
+        directories::ProjectDirs::from("com", "rteams", "RTeamsMeetingAssistant")
+            .map(|p| p.data_dir().to_path_buf())
+            .unwrap_or_else(|| std::env::temp_dir().join("rteams-meeting-assistant"))
     }
 
     pub fn load() -> Self {
@@ -78,8 +93,8 @@ mod tests {
             "whisper_model": "model.bin",
             "source_lang": "en",
             "target_lang": "vi",
-            "translator_model": "qwen2.5:7b",
-            "suggester_model": "gemma3:4b",
+            "translator_model": "qwen2.5:3b",
+            "suggester_model": "qwen2.5:3b",
             "notes_dir": "notes"
         }"#;
 

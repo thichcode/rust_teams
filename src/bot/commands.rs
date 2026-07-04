@@ -13,9 +13,13 @@ pub struct CommandResult {
     pub output: String,
 }
 
+/// Boxed handler for a single slash command: takes the raw argument string,
+/// returns the command's output.
+type CommandHandler = Box<dyn Fn(&str) -> CommandResult + Send + Sync>;
+
 pub struct CommandRegistry {
     commands: Vec<CommandInfo>,
-    handlers: HashMap<&'static str, Box<dyn Fn(&str) -> CommandResult + Send + Sync>>,
+    handlers: HashMap<&'static str, CommandHandler>,
 }
 
 impl CommandRegistry {
@@ -28,7 +32,7 @@ impl CommandRegistry {
         reg
     }
 
-    fn register(&mut self, info: CommandInfo, handler: Box<dyn Fn(&str) -> CommandResult + Send + Sync>) {
+    fn register(&mut self, info: CommandInfo, handler: CommandHandler) {
         let name = info.name;
         self.commands.push(info);
         self.handlers.insert(name, handler);

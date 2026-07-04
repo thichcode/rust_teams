@@ -79,3 +79,49 @@ fn parse_suggestions(raw: &str, n: usize) -> Vec<String> {
     if !out.is_empty() { return out; }
     trimmed.lines().map(str::trim).filter(|s| !s.is_empty()).take(n).map(str::to_string).collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_json_array() {
+        let raw = r#"["Hello", "World", "Test"]"#;
+        let result = parse_suggestions(raw, 3);
+        assert_eq!(result, vec!["Hello", "World", "Test"]);
+    }
+
+    #[test]
+    fn test_parse_json_with_suggestions_key() {
+        let raw = r#"{"suggestions": ["A", "B", "C"]}"#;
+        let result = parse_suggestions(raw, 3);
+        assert_eq!(result, vec!["A", "B", "C"]);
+    }
+
+    #[test]
+    fn test_parse_numbered_list() {
+        let raw = "1. First suggestion\n2. Second idea\n3. Third one";
+        let result = parse_suggestions(raw, 2);
+        assert_eq!(result, vec!["First suggestion", "Second idea"]);
+    }
+
+    #[test]
+    fn test_parse_bullet_list() {
+        let raw = "- Item one\n- Item two\n* Item three";
+        let result = parse_suggestions(raw, 3);
+        assert_eq!(result, vec!["Item one", "Item two", "Item three"]);
+    }
+
+    #[test]
+    fn test_parse_limited_count() {
+        let raw = "1. A\n2. B\n3. C";
+        let result = parse_suggestions(raw, 2);
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_empty() {
+        let result = parse_suggestions("", 3);
+        assert!(result.is_empty());
+    }
+}

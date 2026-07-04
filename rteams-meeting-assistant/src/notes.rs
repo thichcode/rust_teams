@@ -44,7 +44,7 @@ pub fn list_notes(notes_dir: &str) -> Vec<PathBuf> {
     entries.sort_by(|a, b| {
         let ma = a.metadata().ok().and_then(|m| m.modified().ok());
         let mb = b.metadata().ok().and_then(|m| m.modified().ok());
-        mb.cmp(&ma)
+        mb.cmp(&ma).then_with(|| a.cmp(b))
     });
     entries
 }

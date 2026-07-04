@@ -1,5 +1,6 @@
 //! Auto-update module — checks GitHub Releases and downloads updates
 
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -15,6 +16,8 @@ const RETRY_DELAY_MS: u64 = 2000;
 pub struct UpdateInfo {
     pub version: String,
     pub download_url: String,
+    /// URL to the `.sha256` checksum file for `download_url`, if published.
+    pub checksum_url: Option<String>,
     pub body: String,
 }
 
@@ -37,13 +40,13 @@ pub fn check_for_update() -> Result<Option<UpdateInfo>, String> {
 
     // Handle rate limiting
     if response.status().as_u16() == 403 {
-        if let Some(retry_after) = response.headers().get("Retry-After") {
-            if let Ok(seconds) = retry_after.to_str().unwrap_or("60").parse::<u64>() {
-                return Err(format!(
-                    "GitHub API rate limited. Try again in {} seconds",
-                    seconds
-                ));
-            }
+        if let Some(retry_after) = response.headers().get("Retry-After")
+            && let Ok(seconds) = retry_after.to_str().unwrap_or("60").parse::<u64>()
+        {
+            return Err(format!(
+                "GitHub API rate limited. Try again in {} seconds",
+                seconds
+            ));
         }
         return Err("GitHub API rate limited. Try again later.".to_string());
     }
@@ -62,7 +65,7 @@ pub fn check_for_update() -> Result<Option<UpdateInfo>, String> {
         .iter()
         .find(|r| {
             r["tag_name"].as_str()
-                .map(|t| t.starts_with('v') && t[1..].chars().next().map_or(false, |c| c.is_ascii_digit()))
+                .map(|t| t.starts_with('v') && t[1..].chars().next().is_some_and(|c| c.is_ascii_digit()))
                 .unwrap_or(false)
         })
         .ok_or("No main app release found")?;
@@ -87,6 +90,7 @@ pub fn check_for_update() -> Result<Option<UpdateInfo>, String> {
 
     // Find the exe asset - try multiple patterns
     let download_url = find_download_url(release, &tag_name)?;
+    let checksum_url = find_checksum_url(release, &tag_name);
 
     let body = release["body"]
         .as_str()
@@ -96,6 +100,7 @@ pub fn check_for_update() -> Result<Option<UpdateInfo>, String> {
     Ok(Some(UpdateInfo {
         version: tag_name,
         download_url,
+        checksum_url,
         body,
     }))
 }
@@ -106,37 +111,38 @@ fn find_download_url(release: &serde_json::Value, tag: &str) -> Result<String, S
     if let Some(assets) = release["assets"].as_array() {
         // Priority 1: rust_teams-windows-x64.exe
         for asset in assets {
-            if let Some(name) = asset["name"].as_str() {
-                if name == "rust_teams-windows-x64.exe" {
-                    return asset["browser_download_url"]
-                        .as_str()
-                        .map(|s| s.to_string())
-                        .ok_or("Missing download URL".to_string());
-                }
+            if let Some(name) = asset["name"].as_str()
+                && name == "rust_teams-windows-x64.exe"
+            {
+                return asset["browser_download_url"]
+                    .as_str()
+                    .map(|s| s.to_string())
+                    .ok_or("Missing download URL".to_string());
             }
         }
 
         // Priority 2: Any .exe with x64
         for asset in assets {
-            if let Some(name) = asset["name"].as_str() {
-                if name.ends_with(".exe") && name.contains("x64") {
-                    return asset["browser_download_url"]
-                        .as_str()
-                        .map(|s| s.to_string())
-                        .ok_or("Missing download URL".to_string());
-                }
+            if let Some(name) = asset["name"].as_str()
+                && name.ends_with(".exe")
+                && name.contains("x64")
+            {
+                return asset["browser_download_url"]
+                    .as_str()
+                    .map(|s| s.to_string())
+                    .ok_or("Missing download URL".to_string());
             }
         }
 
         // Priority 3: Any .exe
         for asset in assets {
-            if let Some(name) = asset["name"].as_str() {
-                if name.ends_with(".exe") {
-                    return asset["browser_download_url"]
-                        .as_str()
-                        .map(|s| s.to_string())
-                        .ok_or("Missing download URL".to_string());
-                }
+            if let Some(name) = asset["name"].as_str()
+                && name.ends_with(".exe")
+            {
+                return asset["browser_download_url"]
+                    .as_str()
+                    .map(|s| s.to_string())
+                    .ok_or("Missing download URL".to_string());
             }
         }
     }
@@ -144,6 +150,25 @@ fn find_download_url(release: &serde_json::Value, tag: &str) -> Result<String, S
     // Fallback URL
     Ok(format!(
         "https://github.com/{}/releases/download/v{}/rust_teams-windows-x64.exe",
+        REPO, tag
+    ))
+}
+
+/// Find the `.sha256` checksum asset matching the exe download, if published.
+fn find_checksum_url(release: &serde_json::Value, tag: &str) -> Option<String> {
+    if let Some(assets) = release["assets"].as_array() {
+        for asset in assets {
+            if let Some(name) = asset["name"].as_str()
+                && name == "rust_teams-windows-x64.exe.sha256"
+            {
+                return asset["browser_download_url"].as_str().map(|s| s.to_string());
+            }
+        }
+    }
+
+    // Fallback URL (only valid if the release actually publishes this asset)
+    Some(format!(
+        "https://github.com/{}/releases/download/v{}/rust_teams-windows-x64.exe.sha256",
         REPO, tag
     ))
 }
@@ -172,6 +197,19 @@ pub fn download_and_install(update: &UpdateInfo) -> Result<(), String> {
         fs::remove_file(&temp_exe).ok();
     }
 
+    // Fetch expected SHA256 checksum before installing anything (best-effort:
+    // older releases may not publish a checksum asset yet).
+    let expected_checksum = update
+        .checksum_url
+        .as_deref()
+        .and_then(|url| match fetch_checksum(&client, url) {
+            Ok(sum) => Some(sum),
+            Err(e) => {
+                log::warn!("Could not fetch checksum ({}), skipping checksum verification: {}", url, e);
+                None
+            }
+        });
+
     // Download with retry
     let mut last_error = String::new();
     for attempt in 1..=MAX_RETRIES {
@@ -181,8 +219,8 @@ pub fn download_and_install(update: &UpdateInfo) -> Result<(), String> {
             Ok(size) => {
                 println!("✅ Download complete ({} KB)", size / 1024);
 
-                // Validate downloaded file
-                if let Err(e) = validate_download(&temp_exe) {
+                // Validate downloaded file (size, PE header, and checksum if available)
+                if let Err(e) = validate_download(&temp_exe, expected_checksum.as_deref()) {
                     last_error = format!("Validation failed: {}", e);
                     fs::remove_file(&temp_exe).ok();
                     if attempt < MAX_RETRIES {
@@ -211,6 +249,54 @@ pub fn download_and_install(update: &UpdateInfo) -> Result<(), String> {
         "Download failed after {} attempts: {}",
         MAX_RETRIES, last_error
     ))
+}
+
+/// Download and parse a `.sha256` checksum file (format: `<hex>  <filename>`).
+/// Returns the lowercase hex digest.
+fn fetch_checksum(client: &reqwest::blocking::Client, url: &str) -> Result<String, String> {
+    let response = client
+        .get(url)
+        .send()
+        .map_err(|e| format!("Failed to fetch checksum: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Checksum fetch returned status: {}", response.status()));
+    }
+
+    let text = response
+        .text()
+        .map_err(|e| format!("Failed to read checksum body: {}", e))?;
+
+    let hex = text
+        .split_whitespace()
+        .next()
+        .ok_or("Empty checksum file")?
+        .to_lowercase();
+
+    if hex.len() != 64 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(format!("Malformed SHA256 checksum: {}", hex));
+    }
+
+    Ok(hex)
+}
+
+/// Compute the SHA256 checksum of a file, as a lowercase hex string.
+fn compute_sha256(path: &PathBuf) -> Result<String, String> {
+    let mut file = fs::File::open(path).map_err(|e| format!("Failed to open file: {}", e))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = vec![0u8; 65536];
+
+    loop {
+        let bytes_read = file
+            .read(&mut buffer)
+            .map_err(|e| format!("Read error while hashing: {}", e))?;
+        if bytes_read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..bytes_read]);
+    }
+
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 /// Download file to disk
@@ -262,8 +348,10 @@ fn download_file(
     Ok(total_bytes)
 }
 
-/// Validate downloaded file
-fn validate_download(path: &PathBuf) -> Result<(), String> {
+/// Validate downloaded file: size, PE header, and (if available) SHA256 checksum
+/// against the value published alongside the release. Refuses to install if the
+/// checksum was fetched successfully but does not match.
+fn validate_download(path: &PathBuf, expected_sha256: Option<&str>) -> Result<(), String> {
     let metadata =
         fs::metadata(path).map_err(|e| format!("Failed to read file metadata: {}", e))?;
 
@@ -281,10 +369,25 @@ fn validate_download(path: &PathBuf) -> Result<(), String> {
     let mut header = [0u8; 2];
     file.read_exact(&mut header)
         .map_err(|e| format!("Failed to read header: {}", e))?;
+    drop(file);
 
     // Check for MZ header (DOS executable)
     if header[0] != b'M' || header[1] != b'Z' {
         return Err("Not a valid Windows executable (missing MZ header)".to_string());
+    }
+
+    // Verify SHA256 checksum against the published value, when available.
+    if let Some(expected) = expected_sha256 {
+        let actual = compute_sha256(path)?;
+        if !actual.eq_ignore_ascii_case(expected) {
+            return Err(format!(
+                "Checksum mismatch: expected {}, got {}",
+                expected, actual
+            ));
+        }
+        println!("✅ Checksum verified (SHA256)");
+    } else {
+        log::warn!("Installing update without checksum verification (no checksum published)");
     }
 
     Ok(())
@@ -333,6 +436,35 @@ fn restart_app(exe_path: &PathBuf) -> Result<(), String> {
     {
         println!("Please restart the app manually.");
         std::process::exit(0);
+    }
+}
+
+/// Cached result of an update check — avoids duplicate API calls.
+#[derive(Debug, Clone)]
+pub enum UpdateCheck {
+    Available(UpdateInfo),
+    Latest,
+    Error(String),
+}
+
+impl UpdateCheck {
+    pub fn version_info(&self) -> String {
+        match self {
+            Self::Available(update) => format!(
+                "📦 Version: v{} (update available: v{})",
+                CURRENT_VERSION, update.version
+            ),
+            Self::Latest => format!("📦 Version: v{} (latest)", CURRENT_VERSION),
+            Self::Error(e) => format!("📦 Version: v{} (check failed: {e})", CURRENT_VERSION),
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn update(&self) -> Option<&UpdateInfo> {
+        match self {
+            Self::Available(update) => Some(update),
+            _ => None,
+        }
     }
 }
 
@@ -396,5 +528,74 @@ mod tests {
 
         let url = find_download_url(&release, "0.1.0").unwrap();
         assert!(url.contains("rust_teams-windows-x64.exe"));
+    }
+
+    #[test]
+    fn test_find_checksum_url_from_assets() {
+        let release = serde_json::json!({
+            "assets": [
+                {"name": "rust_teams-windows-x64.exe.sha256", "browser_download_url": "https://example.com/exe.sha256"}
+            ]
+        });
+
+        let url = find_checksum_url(&release, "0.1.0").unwrap();
+        assert_eq!(url, "https://example.com/exe.sha256");
+    }
+
+    #[test]
+    fn test_find_checksum_url_fallback() {
+        let release = serde_json::json!({ "assets": [] });
+        let url = find_checksum_url(&release, "0.1.0").unwrap();
+        assert!(url.contains("rust_teams-windows-x64.exe.sha256"));
+    }
+
+    #[test]
+    fn test_compute_sha256() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("rteams_test_checksum.bin");
+        fs::write(&path, b"hello world").unwrap();
+
+        let hash = compute_sha256(&path).unwrap();
+        // SHA256("hello world")
+        // Verified: echo -n "hello world" | sha256sum
+        assert_eq!(
+            hash,
+            "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+        );
+
+        fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_validate_download_checksum_mismatch() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("rteams_test_validate_mismatch.exe");
+        // 1MB+ of MZ-prefixed data so size/header checks pass
+        let mut data = vec![0u8; 1024 * 1024 + 2];
+        data[0] = b'M';
+        data[1] = b'Z';
+        fs::write(&path, &data).unwrap();
+
+        let wrong_checksum = "0".repeat(64);
+        let result = validate_download(&path, Some(&wrong_checksum));
+        assert!(result.is_err());
+
+        fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn test_validate_download_checksum_match() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("rteams_test_validate_match.exe");
+        let mut data = vec![0u8; 1024 * 1024 + 2];
+        data[0] = b'M';
+        data[1] = b'Z';
+        fs::write(&path, &data).unwrap();
+
+        let expected = compute_sha256(&path).unwrap();
+        let result = validate_download(&path, Some(&expected));
+        assert!(result.is_ok());
+
+        fs::remove_file(&path).ok();
     }
 }

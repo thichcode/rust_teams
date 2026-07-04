@@ -1,14 +1,26 @@
 use anyhow::Result;
 use async_trait::async_trait;
+use std::process::Stdio;
 
 #[async_trait]
 pub trait SttProvider: Send + Sync {
     async fn transcribe(&self, audio: &[f32], language: &str) -> Result<String>;
 }
 
+/// Whisper.cpp subprocess-based STT.
+///
+/// **Known limitation:** each `transcribe()` call spawns a new `whisper.cpp`
+/// process which loads the model from disk (~1-3s overhead per utterance).
+/// For production use, prefer:
+///   a) `whisper-rs` crate — in-process inference via C++ bindings
+///   b) whisper.cpp server mode (./server —listen) — keep process warm
+///   c) Keep the subprocess alive via stdin/stdout pipe
 pub struct LocalWhisper {
     whisper_bin: String,
     model_path: String,
+    /// Optional persistent child process handle (kept warm across calls).
+    #[allow(dead_code)]
+    child: Option<std::process::Child>,
 }
 
 impl LocalWhisper {
@@ -16,6 +28,7 @@ impl LocalWhisper {
         Self {
             whisper_bin: whisper_bin.to_string(),
             model_path: model_path.to_string(),
+            child: None,
         }
     }
 }
@@ -36,6 +49,7 @@ impl SttProvider for LocalWhisper {
             .arg("-f").arg(tmp_wav.as_os_str())
             .arg("-otxt").arg("-l").arg(lang)
             .arg("--no-prints")
+            .stdin(Stdio::null())
             .output()
             .await
             .map_err(|e| anyhow::anyhow!("whisper: {e}"))?;
@@ -53,5 +67,25 @@ impl SttProvider for LocalWhisper {
         let _ = std::fs::remove_file(&tmp_out);
 
         Ok(text.trim().to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_and_fields() {
+        let stt = LocalWhisper::new("/usr/bin/whisper", "/models/tiny.bin");
+        assert_eq!(stt.whisper_bin, "/usr/bin/whisper");
+        assert_eq!(stt.model_path, "/models/tiny.bin");
+    }
+
+    #[test]
+    fn test_trait_object() {
+        let stt = LocalWhisper::new("whisper", "model.bin");
+        let provider: &dyn SttProvider = &stt;
+        // Trait is object-safe for the async fn because we use #[async_trait]
+        assert!(std::mem::size_of_val(provider) > 0);
     }
 }

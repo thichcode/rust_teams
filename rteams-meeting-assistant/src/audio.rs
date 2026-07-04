@@ -65,15 +65,24 @@ fn start_wasapi_loopback(buffer: Arc<Mutex<Vec<f32>>>) -> Result<LoopbackHandle>
                         Err(_) => break,
                     }
                 }
-                if !deque.is_empty() {
-                    let n = deque.len() / 4;
+                let n = deque.len() / 4;
+                if n > 0 {
                     let mut samples = Vec::with_capacity(n);
                     for _ in 0..n {
-                        let b0 = deque.pop_front().unwrap_or(0);
-                        let b1 = deque.pop_front().unwrap_or(0);
-                        let b2 = deque.pop_front().unwrap_or(0);
-                        let b3 = deque.pop_front().unwrap_or(0);
-                        samples.push(f32::from_bits(u32::from_le_bytes([b0, b1, b2, b3])));
+                        let b0 = deque.pop_front();
+                        let b1 = deque.pop_front();
+                        let b2 = deque.pop_front();
+                        let b3 = deque.pop_front();
+                        match (b0, b1, b2, b3) {
+                            (Some(b0), Some(b1), Some(b2), Some(b3)) => {
+                                samples.push(f32::from_bits(u32::from_le_bytes([b0, b1, b2, b3])));
+                            }
+                            _ => {
+                                log::error!("WASAPI loopback: incomplete frame, dropping {n} samples");
+                                deque.clear();
+                                break;
+                            }
+                        }
                     }
                     if let Ok(mut buf) = buffer.lock() {
                         buf.extend_from_slice(&samples);

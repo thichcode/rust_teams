@@ -4624,7 +4624,7 @@ dependencies = [
 
 [[package]]
 name = "rust_teams"
-version = "0.9.6"
+version = "0.9.7"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4636,6 +4636,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "sha2",
  "tao",
  "thiserror 1.0.69",
  "winapi",

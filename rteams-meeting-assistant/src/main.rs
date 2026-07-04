@@ -36,7 +36,7 @@ fn main() -> eframe::Result<()> {
     let tray = tray::TrayManager::new();
     let tray_rx = tray.rx;
 
-    let hotkey = hotkey::HotkeyManager::new();
+    let hotkey = hotkey::HotkeyManager::new(&config.toggle_hotkey);
     let hotkey_rx = hotkey.rx;
 
     eframe::run_native(

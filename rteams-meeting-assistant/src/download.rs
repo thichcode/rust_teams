@@ -5,10 +5,37 @@ use std::time::Duration;
 
 use anyhow::Result;
 
-const BIN_URL: &str =
-    "https://github.com/ggerganov/whisper.cpp/releases/download/v1.7.4/whisper-bin-x64.zip";
-const MODEL_URL: &str =
-    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin";
+const BIN_REPO: &str = "ggerganov/whisper.cpp";
+const MODEL_REPO: &str = "ggerganov/whisper.cpp";
+const MODEL_FILE: &str = "ggml-tiny.en.bin";
+
+/// Fetch the latest release tag from GitHub API (e.g. "v1.7.4").
+fn latest_release_tag() -> Result<String> {
+    let url = format!("https://api.github.com/repos/{BIN_REPO}/releases/latest");
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .user_agent("rust_teams-whisper")
+        .build()?;
+    let resp = client.get(&url).send()?;
+    let json: serde_json::Value = resp.json()?;
+    json["tag_name"]
+        .as_str()
+        .map(|s| s.to_string())
+        .ok_or_else(|| anyhow::anyhow!("Could not parse latest release tag"))
+}
+
+/// Build download URLs for the latest whisper.cpp release.
+fn binary_url(tag: &str) -> String {
+    format!(
+        "https://github.com/{BIN_REPO}/releases/download/{tag}/whisper-bin-x64.zip"
+    )
+}
+
+fn model_url() -> String {
+    format!(
+        "https://huggingface.co/{MODEL_REPO}/resolve/main/{MODEL_FILE}"
+    )
+}
 
 pub struct WhisperDownloader {
     data_dir: PathBuf,
@@ -28,7 +55,7 @@ impl WhisperDownloader {
     }
 
     pub fn model_path(&self) -> PathBuf {
-        self.whisper_dir().join("ggml-tiny.en.bin")
+        self.whisper_dir().join(MODEL_FILE)
     }
 
     #[allow(dead_code)]
@@ -42,17 +69,19 @@ impl WhisperDownloader {
 
         if !self.model_path().exists() {
             let _ = progress.send("Downloading whisper model (75 MB)...".into());
-            download_file(MODEL_URL, &self.model_path())?;
+            download_file(&model_url(), &self.model_path())?;
             let _ = progress.send("Model downloaded".into());
         }
 
         if !self.bin_path().exists() {
             let _ = progress.send("Downloading whisper.cpp binary...".into());
+            let tag = latest_release_tag().unwrap_or_else(|_| "v1.7.4".to_string());
+            let bin_url = binary_url(&tag);
             let zip_path = dir.join("whisper-bin-x64.zip");
-            download_file(BIN_URL, &zip_path)?;
+            download_file(&bin_url, &zip_path)?;
             extract_bin(&zip_path, &self.bin_path())?;
             let _ = fs::remove_file(&zip_path);
-            let _ = progress.send("Binary extracted".into());
+            let _ = progress.send(format!("Binary extracted (release {tag})"));
         }
 
         Ok(())

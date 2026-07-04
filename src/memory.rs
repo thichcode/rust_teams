@@ -159,6 +159,22 @@ pub fn build_browser_args(cfg: &MemoryOptimization) -> String {
     flags.join(" ")
 }
 
+/// Detect which profile best matches the current config.
+pub fn detect_profile(cfg: &MemoryOptimization) -> &'static str {
+    if !cfg.enabled {
+        return "OFF";
+    }
+    if cfg.renderer_process_limit > 0 || cfg.js_max_old_space_mb > 0 {
+        "Aggressive"
+    } else if cfg.disable_site_isolation && cfg.disable_back_forward_cache {
+        "Balanced"
+    } else if !cfg.disable_site_isolation && !cfg.disable_back_forward_cache {
+        "Safe"
+    } else {
+        "Custom"
+    }
+}
+
 /// Log tóm tắt các flag sẽ áp dụng (gọi sau `build_browser_args`)
 pub fn log_summary(cfg: &MemoryOptimization) {
     if !cfg.enabled {
@@ -166,7 +182,8 @@ pub fn log_summary(cfg: &MemoryOptimization) {
         return;
     }
 
-    log::info!("Memory optimization: ON (Balanced)");
+    let profile = detect_profile(cfg);
+    log::info!("Memory optimization: ON ({profile})");
     log::info!("  GPU:                  {}", if cfg.disable_gpu { "disabled" } else { "enabled" });
     log::info!("  Background networking:{}", if cfg.disable_background_networking { "off" } else { "on" });
     log::info!("  Breakpad:             {}", if cfg.disable_breakpad { "off" } else { "on" });
@@ -220,8 +237,10 @@ mod tests {
 
     #[test]
     fn test_build_args_disabled() {
-        let mut cfg = MemoryOptimization::default();
-        cfg.enabled = false;
+        let cfg = MemoryOptimization {
+            enabled: false,
+            ..Default::default()
+        };
         let args = build_browser_args(&cfg);
         assert!(args.is_empty());
     }

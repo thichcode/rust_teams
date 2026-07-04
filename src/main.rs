@@ -4,14 +4,12 @@
 mod app;
 mod bot;
 mod config;
-mod error;
 mod memory;
 mod ui;
 mod updater;
 
 use std::error::Error;
-use std::sync::{Arc, Mutex, Mutex as SyncMutex, OnceLock};
-
+use std::sync::{Arc, Mutex, OnceLock};
 
 use tao::event::{Event, StartCause, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoop};
@@ -38,11 +36,17 @@ fn bot_registry() -> &'static CommandRegistry {
     BOT_REGISTRY.get_or_init(CommandRegistry::new)
 }
 
-struct WebViewPtr(*const wry::WebView);
-unsafe impl Send for WebViewPtr {}
-unsafe impl Sync for WebViewPtr {}
+/// WebView stored once after build, safe for the event loop lifetime.
+/// wry::WebView is !Send+!Sync (contains RefCell<HWND>), but is accessed
+/// exclusively from the event-loop thread where the IPC callback runs.
+struct WebViewHandle(Arc<wry::WebView>);
+unsafe impl Send for WebViewHandle {}
+unsafe impl Sync for WebViewHandle {}
 
-static WEBVIEW: SyncMutex<Option<WebViewPtr>> = SyncMutex::new(None);
+static WEBVIEW: OnceLock<WebViewHandle> = OnceLock::new();
+
+/// Cached update check result — avoids calling GitHub API twice.
+static UPDATE_RESULT: OnceLock<updater::UpdateCheck> = OnceLock::new();
 
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
@@ -57,9 +61,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         eprintln!("💾 CLI memory profile override: {}", p.as_str());
     }
 
-    // Check for updates synchronously (before hiding console)
+    // Check for updates synchronously (once, cached for later use)
     println!("🔄 Checking for updates...");
-    match updater::check_for_update() {
+    let update_check = match updater::check_for_update() {
         Ok(Some(update)) => {
             println!();
             println!("╔══════════════════════════════════════════════════════════════╗");
@@ -69,20 +73,24 @@ fn main() -> Result<(), Box<dyn Error>> {
             println!("   Download URL: {}", update.download_url);
             println!();
             println!("   Auto-downloading update...");
-            
+
             if let Err(e) = updater::download_and_install(&update) {
                 println!("❌ Update failed: {}", e);
                 println!("   Please download manually from:");
                 println!("   {}", update.download_url);
             }
+            updater::UpdateCheck::Available(update)
         }
         Ok(None) => {
             println!("✅ Already on latest version (v{})", updater::current_version());
+            updater::UpdateCheck::Latest
         }
         Err(e) => {
             println!("⚠️  Could not check for updates: {}", e);
+            updater::UpdateCheck::Error(e)
         }
-    }
+    };
+    let _ = UPDATE_RESULT.set(update_check);
     println!();
 
     // Load or create config
@@ -147,9 +155,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let badge_count = Arc::new(Mutex::new(0u32));
     let badge_count_clone = badge_count.clone();
     let hwnd_clone = hwnd;
-
-    // Config manager wrapped in Arc for the IPC handler
-    let _config_manager: Arc<ConfigManager> = Arc::new(config_manager);
 
     // Build WebView with memory optimization and title change handler
     let auto_read_js = get_auto_read_script();
@@ -241,7 +246,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         })
          .with_ipc_handler(move |message| {
             let body = message.body();
-            if let Ok(msg) = serde_json::from_str::<serde_json::Value>(&body) {
+            if let Ok(msg) = serde_json::from_str::<serde_json::Value>(body) {
                 let msg_type = msg["type"].as_str().unwrap_or("");
 
                 if msg_type == "bot_command" {
@@ -260,19 +265,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                     } else {
                         registry.execute(cmd, args)
                     };
-                    if let Ok(guard) = WEBVIEW.lock() {
-                        if let Some(WebViewPtr(ptr)) = *guard {
-                            let wv = unsafe { &*ptr };
-                            // For autoread command, also trigger the JS function
-                            if cmd == "autoread" {
-                                let _ = wv.evaluate_script("processChats()");
-                            }
-                            let js = format!(
-                                "window.dispatchEvent(new CustomEvent('rteams-bot-response', {{ detail: {{ output: '{}' }} }}));",
-                                result.output.replace('\\', "\\\\").replace('\'', "\\'"),
-                            );
-                            let _ = wv.evaluate_script(&js);
+                    if let Some(wv) = WEBVIEW.get() {
+                        if cmd == "autoread" {
+                            let _ = wv.0.evaluate_script("processChats()");
                         }
+                        let js = format!(
+                            "window.dispatchEvent(new CustomEvent('rteams-bot-response', {{ detail: {{ output: '{}' }} }}));",
+                            result.output.replace('\\', "\\\\").replace('\'', "\\'"),
+                        );
+                        let _ = wv.0.evaluate_script(&js);
                     }
                 }
             }
@@ -288,22 +289,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         .build(&window)
         .map_err(|e| -> Box<dyn Error> { format!("Failed to create WebView: {}", e).into() })?;
 
-    let webview_handle = Arc::new(webview);
-    *WEBVIEW.lock().unwrap() = Some(WebViewPtr(&*webview_handle as *const wry::WebView));
+    let wv_arc = Arc::new(webview);
+    let _ = WEBVIEW.set(WebViewHandle(wv_arc.clone()));
+    let _webview_keepalive = wv_arc;
 
-    // Check version
-    let current_version = updater::current_version();
-    let version_info = match updater::check_for_update() {
-        Ok(Some(update)) => {
-            format!("📦 Version: v{} (update available: v{})", current_version, update.version)
-        }
-        Ok(None) => {
-            format!("📦 Version: v{} (latest)", current_version)
-        }
-        Err(_) => {
-            format!("📦 Version: v{}", current_version)
-        }
-    };
+    // Use cached update check result (no second API call)
+    let version_info = UPDATE_RESULT.get()
+        .map(|r| r.version_info())
+        .unwrap_or_else(|| format!("📦 Version: v{}", updater::current_version()));
 
     eprintln!("✅ R Teams window created successfully!");
     eprintln!("{}", version_info);
@@ -317,7 +310,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Auto-hide console after 10 seconds
     auto_hide_console(10000);
 
-    let _webview_keepalive = webview_handle;
+    // Capture config + manager for save-on-close
+    let cm_for_save = Arc::new(config_manager);
+    let mut config_for_save = config.clone();
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
@@ -331,6 +326,18 @@ fn main() -> Result<(), Box<dyn Error>> {
                 ..
             } => {
                 log::info!("Close requested, shutting down...");
+                #[cfg(target_os = "windows")]
+                unsafe {
+                    use winapi::um::winuser::GetWindowRect;
+                    let mut rect = std::mem::zeroed();
+                    if GetWindowRect(hwnd as _, &mut rect) != 0 {
+                        config_for_save.window_settings.width = (rect.right - rect.left) as u32;
+                        config_for_save.window_settings.height = (rect.bottom - rect.top) as u32;
+                    }
+                }
+                if let Err(e) = cm_for_save.save(&config_for_save) {
+                    log::warn!("Failed to save config on close: {e}");
+                }
                 *control_flow = ControlFlow::Exit;
             }
             Event::WindowEvent {
@@ -355,7 +362,8 @@ fn load_window_icon() -> Result<Icon, Box<dyn Error>> {
             let idx = ((y * size + x) * 4) as usize;
 
             // Simple "R" letter approximation
-            let is_r = (x >= 8 && x <= 24 && y >= 6 && y <= 26)
+            let is_r = (8..=24).contains(&x)
+                && (6..=26).contains(&y)
                 && ((x <= 12)
                     || (y <= 10)
                     || (y >= 18 && x >= 12 && (x + y) <= 32));
@@ -384,10 +392,10 @@ fn load_window_icon() -> Result<Icon, Box<dyn Error>> {
 
 /// Get the Teams URL from config profiles, or return the default Teams URL
 fn get_teams_url(config: &AppConfig) -> String {
-    if let Some(ref profile_id) = config.current_profile_id {
-        if let Some(profile) = config.profiles.iter().find(|p| &p.id == profile_id) {
-            return profile.teams_url.clone();
-        }
+    if let Some(ref profile_id) = config.current_profile_id
+        && let Some(profile) = config.profiles.iter().find(|p| &p.id == profile_id)
+    {
+        return profile.teams_url.clone();
     }
 
     if let Some(profile) = config.profiles.iter().find(|p| p.is_default) {
