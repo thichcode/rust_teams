@@ -48,3 +48,5 @@ sha2 = "0.10"
 # Windows-specific dependencies
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["winuser", "shellapi", "winbase", "processthreadsapi", "wincon"] }
+
+

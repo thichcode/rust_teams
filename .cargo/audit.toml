@@ -1,0 +1,5 @@
+[advisories]
+ignore = [
+  "RUSTSEC-2026-0194",  # quick-xml Quadratic run time — Linux-only transitive dep (zbus_xml, wayland-scanner), not compiled on Windows
+  "RUSTSEC-2026-0195",  # quick-xml Unbounded namespace allocation — Linux-only transitive dep, not compiled on Windows
+]

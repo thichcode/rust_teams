@@ -7394,3 +7394,8 @@ dependencies = [
  "quote",
  "syn 2.0.118",
 ]
+
+[[patch.unused]]
+name = "quick-xml"
+version = "0.41.0"
+source = "git+https://github.com/tafia/quick-xml.git?tag=v0.41.0#4deda08abeffdc188c269360229cf47e12a77a9f"
