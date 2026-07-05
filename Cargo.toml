@@ -32,8 +32,8 @@ log = "0.4"
 # Utilities
 directories = "4.0"
 
-# Auto-update (rustls to avoid OpenSSL CVEs)
-reqwest = { version = "0.12", features = ["json", "blocking", "rustls-tls", "multipart"], default-features = false }
+# Auto-update (Schannel on Windows, OpenSSL on Linux — no rustls to ensure system proxy/TLS compatibility)
+reqwest = { version = "0.12", features = ["json", "blocking", "multipart"] }
 semver = "1.0"
 
 # Date/time handling
