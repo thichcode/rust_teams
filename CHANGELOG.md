@@ -2,6 +2,11 @@
 
 All notable changes to R Teams.
 
+## [0.9.10] - 2026-07-05
+
+### Added
+- Version number on window title bar
+
 ## [0.9.9] - 2026-07-05
 
 ### Added

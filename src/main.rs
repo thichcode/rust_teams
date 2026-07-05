@@ -133,13 +133,12 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Create event loop and window
     let event_loop = EventLoop::new();
-    let mut window_builder =
-        WindowBuilder::new()
-            .with_title("R Teams")
-            .with_inner_size(tao::dpi::LogicalSize::new(
-                config.window_settings.width as f64,
-                config.window_settings.height as f64,
-            ));
+    let mut window_builder = WindowBuilder::new()
+        .with_title(format!("R Teams v{}", updater::current_version()))
+        .with_inner_size(tao::dpi::LogicalSize::new(
+            config.window_settings.width as f64,
+            config.window_settings.height as f64,
+        ));
 
     // Set window icon from embedded resource
     if let Ok(icon) = load_window_icon() {
