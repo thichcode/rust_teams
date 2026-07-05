@@ -23,8 +23,7 @@ use bot::{CommandRegistry, parse_command};
 use config::ConfigManager;
 use ui::auto_read::get_auto_read_script;
 use ui::badge::{parse_unread_count, play_notification_sound, update_taskbar_badge};
-use ui::browser::open_in_new_window;
-use ui::browser::open_url_smart;
+use ui::browser::{BROWSER_PATH, handle_browser_command, open_in_new_window, open_url_smart};
 use ui::command_bar::get_command_bar_script;
 use ui::console::auto_hide_console;
 use ui::performance::get_all_optimization_scripts;
@@ -101,13 +100,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!();
 
     // Load or create config
-    let config_manager = ConfigManager::new();
+    let config_manager = Arc::new(ConfigManager::new());
     let mut config = match config_manager.load() {
         Ok(cfg) => {
+            let _ = BROWSER_PATH.get_or_init(|| Mutex::new(cfg.browser_path.clone()));
             eprintln!("✅ Config loaded");
             cfg
         }
         Err(e) => {
+            let _ = BROWSER_PATH.get_or_init(|| Mutex::new(None));
             eprintln!("⚠️  Config error: {}. Using defaults.", e);
             config_manager.default_config()
         }
@@ -176,6 +177,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         log::info!("WebView2 args: {}", browser_args);
     }
 
+    let cm_for_ipc = config_manager.clone();
     let mut webview_builder = WebViewBuilder::new()
         .with_url(&teams_url)
         .with_additional_browser_args(&browser_args)
@@ -203,12 +205,10 @@ fn main() -> Result<(), Box<dyn Error>> {
             log::info!("Intercepted navigation: {}", url);
 
             let lower = url.to_lowercase();
+            let browser = BROWSER_PATH.get()
+                .and_then(|m| m.lock().ok())
+                .and_then(|g| g.clone());
 
-            // ---- Teams pop-out detection (chat / profile / channel) ----
-            // WebView2 is single-window, so any Teams internal popup
-            // (1:1 chat, group chat, profile, channel) must be opened
-            // in a separate Edge window. Otherwise `NewWindowResponse::Allow`
-            // would just defer to default browser (often no-op for R Teams).
             let is_teams_internal = lower.contains("teams.microsoft.com")
                 || lower.contains("teams.live.com");
             let is_popout = lower.contains("/l/chat/")
@@ -220,33 +220,27 @@ fn main() -> Result<(), Box<dyn Error>> {
                 log::info!("Routing Teams pop-out to new Edge window: {}", url);
                 if let Err(e) = open_in_new_window(&url) {
                     log::warn!("Failed to open in new window, fallback: {}", e);
-                    let _ = open_url_smart(&url);
+                    let _ = open_url_smart(&url, browser.as_deref());
                 }
                 return NewWindowResponse::Deny;
             }
 
-            // ---- Meet/call join URLs ----
-            // Open in system browser because WebView2 is single-window
-            // and cannot create popup windows for the call stage.
             if lower.contains("/meet/")
                 || lower.contains("/call/")
                 || lower.contains("meetup-join")
                 || lower.contains("teams.live.com/meet")
             {
                 log::info!("Routing meet/call URL to system browser: {}", url);
-                if let Err(e) = open_url_smart(&url) {
+                if let Err(e) = open_url_smart(&url, browser.as_deref()) {
                     log::warn!("Failed to open meet URL: {}", e);
                 }
                 return NewWindowResponse::Deny;
             }
 
-            // ---- Teams/Microsoft URLs (non-popout) ----
             if is_teams_internal {
-                // Allow Teams URLs - open in same window
                 NewWindowResponse::Allow
             } else {
-                // ---- External URL ----
-                if let Err(e) = open_url_smart(&url) {
+                if let Err(e) = open_url_smart(&url, browser.as_deref()) {
                     log::warn!("Failed to open URL: {}", e);
                 }
                 NewWindowResponse::Deny
@@ -276,6 +270,25 @@ fn main() -> Result<(), Box<dyn Error>> {
                     if let Some(wv) = WEBVIEW.get() {
                         if cmd == "autoread" {
                             let _ = wv.0.evaluate_script("processChats()");
+                        }
+                        if cmd == "browser" {
+                            let output = handle_browser_command(args);
+                            if let (Some(path), Some(bp)) = (output.new_browser, BROWSER_PATH.get())
+                            {
+                                *bp.lock().unwrap() = path;
+                                if let Ok(mut cfg) = cm_for_ipc.load() {
+                                    cfg.browser_path = BROWSER_PATH.get()
+                                        .and_then(|m| m.lock().ok())
+                                        .and_then(|g| g.clone());
+                                    let _ = cm_for_ipc.save(&cfg);
+                                }
+                            }
+                            let js = format!(
+                                "window.dispatchEvent(new CustomEvent('rteams-bot-response', {{ detail: {{ output: '{}' }} }}));",
+                                output.message.replace('\\', "\\\\").replace('\'', "\\'"),
+                            );
+                            let _ = wv.0.evaluate_script(&js);
+                            return;
                         }
                         let js = format!(
                             "window.dispatchEvent(new CustomEvent('rteams-bot-response', {{ detail: {{ output: '{}' }} }}));",
@@ -321,7 +334,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     auto_hide_console(10000);
 
     // Capture config + manager for save-on-close
-    let cm_for_save = Arc::new(config_manager);
+    let cm_for_save = config_manager;
     let mut config_for_save = config.clone();
 
     event_loop.run(move |event, _, control_flow| {

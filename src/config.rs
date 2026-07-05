@@ -35,6 +35,7 @@ impl ConfigManager {
             }],
             current_profile_id: Some("default".to_string()),
             memory_optimization: MemoryOptimization::default(),
+            browser_path: None,
         }
     }
 

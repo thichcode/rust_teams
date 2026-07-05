@@ -162,6 +162,17 @@ impl CommandRegistry {
                 output: "Auto-read cycle triggered".into(),
             }),
         );
+
+        self.register(
+            CommandInfo {
+                name: "browser",
+                description: "Show/change link browser",
+                usage: "/browser [name|default]",
+            },
+            Box::new(|_| CommandResult {
+                output: String::new(),
+            }),
+        );
     }
 
     pub fn commands(&self) -> &[CommandInfo] {

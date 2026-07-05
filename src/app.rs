@@ -14,6 +14,9 @@ pub struct AppConfig {
     pub current_profile_id: Option<String>,
     #[serde(default = "default_memory_config")]
     pub memory_optimization: MemoryOptimization,
+    /// Path to preferred browser executable, or None for system default.
+    #[serde(default)]
+    pub browser_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
