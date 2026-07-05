@@ -2,6 +2,16 @@
 
 All notable changes to R Teams.
 
+## [0.9.9] - 2026-07-05
+
+### Added
+- Configurable link browser via `/browser` command (Chrome, Firefox, Edge, Brave, Opera, Vivaldi)
+- Browser auto-detection from well-known install paths
+- `browser_path` field persisted in config.json
+
+### Fixed
+- reqwest now uses Schannel (native Windows TLS) instead of rustls — fixes GitHub API connectivity behind proxies
+
 ## [0.9.8] - 2026-07-04
 
 ### Fixed
