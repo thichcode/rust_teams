@@ -13,29 +13,25 @@ jobs:
     container:
       image: mingc/android-build-box:latest
 
-    defaults:
-      run:
-        working-directory: mobile/android
-        shell: bash
-
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check available tools
+      - name: Build debug APK
+        shell: bash
+        working-directory: ${{ github.workspace }}/mobile/android
         run: |
+          set -e
           echo "=== Java ==="
-          java -version 2>&1 || echo "Java not found"
+          java -version
           echo "=== Gradle ==="
-          gradle --version 2>&1 || echo "Gradle not found"
+          gradle --version
           echo "=== SDK ==="
           echo "ANDROID_HOME=$ANDROID_HOME"
-          ls "$ANDROID_HOME/platforms/" 2>&1 || echo "No platforms dir"
-          echo "=== PATH ==="
-          echo "$PATH"
-
-      - name: Build debug APK
-        run: |
+          ls "$ANDROID_HOME/platforms/"
+          echo "=== Generate wrapper ==="
           gradle wrapper --gradle-version 8.9
+          echo "=== Build ==="
+          chmod +x gradlew
           ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK artifact
@@ -46,13 +42,17 @@ jobs:
 
       - name: Sign release APK
         if: env.ANDROID_KEYSTORE_BASE64 != ''
+        shell: bash
+        working-directory: ${{ github.workspace }}/mobile/android
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
+          set -e
           gradle wrapper --gradle-version 8.9
+          chmod +x gradlew
           echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > keystore.jks
           ./gradlew assembleRelease --stacktrace
           mv app/build/outputs/apk/release/app-release.apk \
