@@ -31,14 +31,13 @@ jobs:
           yes | sdkmanager --licenses
           sdkmanager "platforms;android-34" "build-tools;34.0.0"
 
-      - name: Setup Gradle
+      - name: Setup Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
-
-      - name: Generate Gradle wrapper
-        run: gradle wrapper --gradle-version 8.9
+        with:
+          gradle-version: 8.9
 
       - name: Build debug APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: gradle assembleDebug --no-daemon --stacktrace
 
       - name: Sign release APK
         if: env.ANDROID_KEYSTORE_BASE64 != ''
@@ -49,7 +48,7 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > keystore.jks
-          ./gradlew assembleRelease --no-daemon --stacktrace
+          gradle assembleRelease --no-daemon --stacktrace
           mv app/build/outputs/apk/release/app-release.apk \
              app/build/outputs/apk/release/RTeams-${{ github.ref_name }}.apk
 
