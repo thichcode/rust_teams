@@ -26,19 +26,19 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-
-      - name: Install Android SDK platforms and accept licenses
+      - name: Install Android SDK platforms
         run: |
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          yes | sdkmanager "platforms;android-34" "build-tools;34.0.0" "cmdline-tools;latest" > /dev/null 2>&1
+          yes | sdkmanager --licenses
+          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Generate Gradle wrapper
         run: gradle wrapper --gradle-version 8.9
 
       - name: Build debug APK
-        run: ./gradlew assembleDebug
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Sign release APK
         if: env.ANDROID_KEYSTORE_BASE64 != ''
@@ -49,7 +49,7 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > keystore.jks
-          ./gradlew assembleRelease
+          ./gradlew assembleRelease --no-daemon --stacktrace
           mv app/build/outputs/apk/release/app-release.apk \
              app/build/outputs/apk/release/RTeams-${{ github.ref_name }}.apk
 
