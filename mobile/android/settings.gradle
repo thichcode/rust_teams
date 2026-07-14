@@ -1,0 +1,2 @@
+rootProject.name = 'RTeams'
+include ':app'

@@ -3,7 +3,7 @@ members = ["rteams-meeting-assistant"]
 
 [package]
 name = "rust_teams"
-version = "0.9.10"
+version = "0.9.11"
 edition = "2024"  # Latest Rust edition (2024)
 
 [features]

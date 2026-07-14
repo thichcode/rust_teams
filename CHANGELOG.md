@@ -2,6 +2,11 @@
 
 All notable changes to R Teams.
 
+## [0.9.11] - 2026-07-05
+
+### Added
+- Android PWA wrapper (WebView, API 23+, GitHub Action CI build)
+
 ## [0.9.10] - 2026-07-05
 
 ### Added
