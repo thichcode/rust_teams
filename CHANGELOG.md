@@ -2,6 +2,11 @@
 
 All notable changes to R Teams.
 
+## [0.9.12] - 2026-07-14
+
+### Fixed
+- Android CI: install Gradle via direct download instead of broken wrapper gen
+
 ## [0.9.11] - 2026-07-05
 
 ### Added
