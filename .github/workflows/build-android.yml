@@ -21,11 +21,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Generate Gradle wrapper
-        run: gradle wrapper --gradle-version 8.9
+      - name: Check available tools
+        run: |
+          echo "=== Java ==="
+          java -version 2>&1 || echo "Java not found"
+          echo "=== Gradle ==="
+          gradle --version 2>&1 || echo "Gradle not found"
+          echo "=== SDK ==="
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls "$ANDROID_HOME/platforms/" 2>&1 || echo "No platforms dir"
+          echo "=== PATH ==="
+          echo "$PATH"
 
       - name: Build debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: |
+          gradle wrapper --gradle-version 8.9
+          ./gradlew assembleDebug --stacktrace
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
