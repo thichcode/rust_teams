@@ -36,6 +36,11 @@ jobs:
             sudo unzip -qo gradle-8.9-bin.zip -d /opt
             echo "/opt/gradle-8.9/bin" >> $GITHUB_PATH
 
+      - name: Install Android SDK platforms and accept licenses
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          yes | sdkmanager "platforms;android-34" "build-tools;34.0.0" > /dev/null 2>&1
+
       - name: Build debug APK
         run: gradle assembleDebug
 
