@@ -26,23 +26,19 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Gradle 8.9
-        uses: nick-fields/retry@v3
-        with:
-          timeout_minutes: 5
-          max_attempts: 3
-          command: |
-            wget -q "https://services.gradle.org/distributions/gradle-8.9-bin.zip"
-            sudo unzip -qo gradle-8.9-bin.zip -d /opt
-            echo "/opt/gradle-8.9/bin" >> $GITHUB_PATH
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
 
       - name: Install Android SDK platforms and accept licenses
         run: |
           yes | sdkmanager --licenses > /dev/null 2>&1 || true
-          yes | sdkmanager "platforms;android-34" "build-tools;34.0.0" > /dev/null 2>&1
+          yes | sdkmanager "platforms;android-34" "build-tools;34.0.0" "cmdline-tools;latest" > /dev/null 2>&1
+
+      - name: Generate Gradle wrapper
+        run: gradle wrapper --gradle-version 8.9
 
       - name: Build debug APK
-        run: gradle assembleDebug
+        run: ./gradlew assembleDebug
 
       - name: Sign release APK
         if: env.ANDROID_KEYSTORE_BASE64 != ''
@@ -53,7 +49,7 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > keystore.jks
-          gradle assembleRelease
+          ./gradlew assembleRelease
           mv app/build/outputs/apk/release/app-release.apk \
              app/build/outputs/apk/release/RTeams-${{ github.ref_name }}.apk
 
