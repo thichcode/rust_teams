@@ -40,22 +40,25 @@ jobs:
       - name: Generate Gradle Wrapper
         run: gradle wrapper --gradle-version 8.9 --no-daemon
 
-      - name: Diagnose environment
-        run: |
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "JAVA_HOME=$JAVA_HOME"
-          echo "GRADLE_HOME=$GRADLE_HOME"
-          echo "sdk.dir=$ANDROID_HOME" > local.properties
-          echo "Gradle version:" && gradle --version
-          echo "---"
-          ls -la $ANDROID_HOME/platforms/ 2>/dev/null
-          ls -la $ANDROID_HOME/build-tools/ 2>/dev/null
-
       - name: Build debug APK
         run: |
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           ./gradlew assembleDebug --no-daemon 2>&1 | tee build.log
           exit ${PIPESTATUS[0]}
+
+      - name: Push build output to debug branch
+        if: failure()
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          git config user.email "ci-bot@example.com"
+          git config user.name "CI Bot"
+          git fetch origin ci-debug 2>/dev/null; git checkout -b ci-debug origin/ci-debug 2>/dev/null || git checkout --orphan ci-debug
+          git rm -rf . 2>/dev/null; git reset HEAD 2>/dev/null
+          cp mobile/android/build.log ./build-output.log
+          echo "Generated at $(date -u)" >> build-output.log
+          git add build-output.log
+          git commit -m "build output from CI run"
+          git push origin ci-debug --force 2>&1 || echo "push failed (expected if token lacks permissions)"
 
       - name: Upload build log
         if: failure()
