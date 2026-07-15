@@ -23,35 +23,41 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install SDK components
+        run: |
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" > /dev/null 2>&1 || true
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.9
           cache-read-only: false
 
-      - name: Verify pre-installed SDK and install components
+      - name: Generate Gradle Wrapper
+        run: gradle wrapper --gradle-version 8.9 --no-daemon
+
+      - name: Diagnose environment
         run: |
           echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          ls -la $ANDROID_HOME/ 2>/dev/null || echo "ANDROID_HOME not found"
-          ls -la /usr/local/lib/android/sdk/ 2>/dev/null && export ANDROID_HOME=/usr/local/lib/android/sdk || echo "default sdk path not found"
-          ls -la /usr/local/lib/android/ 2>/dev/null
-          which sdkmanager 2>/dev/null || echo "sdkmanager not on PATH"
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses 2>/dev/null || \
-            yes | sdkmanager --licenses 2>/dev/null || \
-            echo "sdkmanager license acceptance failed"
-          sdkmanager "platforms;android-34" "build-tools;34.0.0" 2>&1
+          echo "JAVA_HOME=$JAVA_HOME"
+          echo "GRADLE_HOME=$GRADLE_HOME"
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          echo "Gradle version:" && gradle --version
+          echo "---"
+          ls -la $ANDROID_HOME/platforms/ 2>/dev/null
+          ls -la $ANDROID_HOME/build-tools/ 2>/dev/null
 
-      - name: Build with Gradle
+      - name: Build debug APK
         run: |
-          echo "sdk.dir=${ANDROID_HOME:-/usr/local/lib/android/sdk}" > local.properties
-          cat local.properties
-          echo "---"
-          gradle --version
-          echo "---"
-          gradle assembleDebug --stacktrace --no-daemon 2>&1 | tee build.log
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          ./gradlew assembleDebug --no-daemon 2>&1 | tee build.log
+          exit ${PIPESTATUS[0]}
 
-      - name: Upload build log (on failure)
+      - name: Upload build log
         if: failure()
         uses: actions/upload-artifact@v4
         with:
@@ -74,7 +80,7 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > keystore.jks
-          gradle assembleRelease --stacktrace --no-daemon
+          ./gradlew assembleRelease --no-daemon
           mv app/build/outputs/apk/release/app-release.apk \
              app/build/outputs/apk/release/RTeams-${{ github.ref_name }}.apk
 
