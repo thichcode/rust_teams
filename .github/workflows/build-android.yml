@@ -10,6 +10,8 @@ jobs:
   build:
     name: Build APK (Android 6.0+)
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     defaults:
       run:
         working-directory: mobile/android
@@ -79,3 +81,26 @@ jobs:
         with:
           name: RTeams-${{ github.ref_name }}.apk
           path: mobile/android/app/build/outputs/apk/release/RTeams-${{ github.ref_name }}.apk
+
+      - name: Upload APK to GitHub Release
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          APK="${{ github.workspace }}/mobile/android/app/build/outputs/apk/debug/app-debug.apk"
+          ASSET="RTeams-${TAG}-android.apk"
+          cp "${APK}" "/tmp/${ASSET}"
+          echo "Waiting for release ${TAG} to be created..."
+          for i in $(seq 1 30); do
+            if gh release view "${TAG}" --repo "${{ github.repository }}" &>/dev/null; then
+              echo "Release found, uploading APK..."
+              gh release upload "${TAG}" "/tmp/${ASSET}" --repo "${{ github.repository }}" --clobber
+              echo "APK uploaded as ${ASSET}"
+              exit 0
+            fi
+            echo "Attempt $i: release not ready yet, waiting..."
+            sleep 10
+          done
+          echo "ERROR: Release ${TAG} was not created within 5 minutes"
+          exit 1
