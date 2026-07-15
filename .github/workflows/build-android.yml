@@ -24,7 +24,7 @@ jobs:
           java-version: 17
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Install deps
         run: |
@@ -34,7 +34,7 @@ jobs:
           sudo unzip -qo gradle-8.9-bin.zip -d /opt
           echo "export PATH=/opt/gradle-8.9/bin:\$PATH" >> ~/.bashrc
           export PATH=/opt/gradle-8.9/bin:$PATH
-          gradle wrapper --gradle-version 8.9
+          gradle wrapper --gradle-version 8.9 --no-daemon
           echo "=== CHECK ==="
           ls -la
           java -version
@@ -44,8 +44,9 @@ jobs:
       - name: Build debug APK
         run: |
           export PATH=/opt/gradle-8.9/bin:$PATH
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
           chmod +x gradlew 2>/dev/null || true
-          ./gradlew assembleDebug --stacktrace 2>&1 | tee build.log
+          ./gradlew assembleDebug --stacktrace --no-daemon 2>&1 | tee build.log
           if [ ${PIPESTATUS[0]} -ne 0 ]; then exit 1; fi
 
       - name: Upload build log
