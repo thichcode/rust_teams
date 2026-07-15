@@ -44,13 +44,18 @@ jobs:
       - name: Build debug APK
         run: |
           export PATH=/opt/gradle-8.9/bin:$PATH
-          chmod +x gradlew
-          ./gradlew assembleDebug --stacktrace
+          gradle assembleDebug --stacktrace 2>&1 | tee ../build.log
+          if [ ${PIPESTATUS[0]} -ne 0 ]; then exit 1; fi
 
-      - name: Verify APK
-        run: ls -la app/build/outputs/apk/debug/app-debug.apk
+      - name: Upload build log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: mobile/android/build.log
 
       - name: Upload APK artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: RTeams-android
