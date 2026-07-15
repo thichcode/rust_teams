@@ -23,47 +23,35 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v4
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.9
+          cache-read-only: false
 
-      - name: Install SDK components
+      - name: Verify pre-installed SDK and install components
         run: |
-          yes | sdkmanager --licenses
-          sdkmanager "platforms;android-34" "build-tools;34.0.0"
-
-      - name: Install Gradle 8.9
-        run: |
-          wget -q https://services.gradle.org/distributions/gradle-8.9-bin.zip
-          unzip -q gradle-8.9-bin.zip
-          echo "$PWD/gradle-8.9/bin" >> $GITHUB_PATH
-
-      - name: Build debug APK
-        run: |
-          set -o pipefail
-          echo "sdk.dir=$ANDROID_HOME" > local.properties
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
-          echo "JAVA_HOME=$JAVA_HOME"
-          ls -la $ANDROID_HOME/platforms/ 2>/dev/null || echo "No platforms dir"
-          ls -la $ANDROID_HOME/build-tools/ 2>/dev/null || echo "No build-tools dir"
-          gradle assembleDebug --stacktrace --no-daemon 2>&1 | tee build.log
-          result=$?
-          if [ $result -ne 0 ]; then
-            {
-              echo "### Build failed — last 80 lines of build.log"
-              echo '```'
-              tail -80 build.log
-              echo '```'
-            } >> $GITHUB_STEP_SUMMARY
-            echo "::group::Build log last 50 lines"
-            tail -50 build.log
-            echo "::endgroup::"
-            tail -50 build.log > /tmp/build-err.txt
-            gh pr comment 8 --repo thichcode/rust_teams --body-file /tmp/build-err.txt 2>&1 || echo "pr-comment-failed"
-            exit 1
-          fi
+          ls -la $ANDROID_HOME/ 2>/dev/null || echo "ANDROID_HOME not found"
+          ls -la /usr/local/lib/android/sdk/ 2>/dev/null && export ANDROID_HOME=/usr/local/lib/android/sdk || echo "default sdk path not found"
+          ls -la /usr/local/lib/android/ 2>/dev/null
+          which sdkmanager 2>/dev/null || echo "sdkmanager not on PATH"
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses 2>/dev/null || \
+            yes | sdkmanager --licenses 2>/dev/null || \
+            echo "sdkmanager license acceptance failed"
+          sdkmanager "platforms;android-34" "build-tools;34.0.0" 2>&1
 
-      - name: Upload build log
+      - name: Build with Gradle
+        run: |
+          echo "sdk.dir=${ANDROID_HOME:-/usr/local/lib/android/sdk}" > local.properties
+          cat local.properties
+          echo "---"
+          gradle --version
+          echo "---"
+          gradle assembleDebug --stacktrace --no-daemon 2>&1 | tee build.log
+
+      - name: Upload build log (on failure)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
