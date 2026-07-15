@@ -55,15 +55,15 @@ jobs:
               tail -80 build.log
               echo '```'
             } >> $GITHUB_STEP_SUMMARY
-            # Emit the last 80 lines as annotations (visible via API)
-            tail -50 build.log | while IFS= read -r line; do
-              echo "::error file=build.gradle,title=Gradle::$line"
-            done
-            # Also try various pastebin services
-            curl -s --data-binary @build.log https://paste.rs/ 2>/dev/null || \
-            curl -s -X POST -H "Content-Type: text/plain" --data-binary @build.log https://hastebin.skyra.pw/documents 2>/dev/null || \
-            tail -80 build.log | curl -s -F 'f:1=<-' https://ix.io 2>/dev/null || \
-            echo "No pastebin available"
+            # Create a debugging issue with the build log (readable via API)
+            {
+              echo "Android build failed for \`${{ github.ref_name }}\`"
+              echo ""
+              echo '\`\`\`'
+              tail -50 build.log
+              echo '\`\`\`'
+            } > /tmp/build-issue.md
+            gh issue create --title "Android build debug $(date +%s)" --label build-debug --body-file /tmp/build-issue.md 2>/dev/null || echo "issue failed"
             exit 1
           fi
 
