@@ -63,7 +63,7 @@ jobs:
               tail -50 build.log
               echo '\`\`\`'
             } > /tmp/build-issue.md
-            gh issue create --title "Android build debug $(date +%s)" --label build-debug --body-file /tmp/build-issue.md 2>/dev/null || echo "issue failed"
+            gh issue create --title "Android build debug $(date +%s)" --body-file /tmp/build-issue.md 2>/dev/null || echo "issue failed"
             exit 1
           fi
 
