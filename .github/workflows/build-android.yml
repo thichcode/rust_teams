@@ -55,15 +55,11 @@ jobs:
               tail -80 build.log
               echo '```'
             } >> $GITHUB_STEP_SUMMARY
-            # Create a debugging issue with the build log (readable via API)
-            {
-              echo "Android build failed for \`${{ github.ref_name }}\`"
-              echo ""
-              echo '\`\`\`'
-              tail -50 build.log
-              echo '\`\`\`'
-            } > /tmp/build-issue.md
-            gh issue create --title "Android build debug $(date +%s)" --body-file /tmp/build-issue.md 2>/dev/null || echo "issue failed"
+            echo "::group::Build log last 50 lines"
+            tail -50 build.log
+            echo "::endgroup::"
+            tail -50 build.log > /tmp/build-err.txt
+            gh pr comment 8 --repo thichcode/rust_teams --body-file /tmp/build-err.txt 2>&1 || echo "pr-comment-failed"
             exit 1
           fi
 
