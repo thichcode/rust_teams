@@ -44,7 +44,8 @@ jobs:
       - name: Build debug APK
         run: |
           export PATH=/opt/gradle-8.9/bin:$PATH
-          gradle assembleDebug --stacktrace 2>&1 | tee ../build.log
+          chmod +x gradlew 2>/dev/null || true
+          ./gradlew assembleDebug --stacktrace 2>&1 | tee build.log
           if [ ${PIPESTATUS[0]} -ne 0 ]; then exit 1; fi
 
       - name: Upload build log
