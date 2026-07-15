@@ -1,4 +1,4 @@
-name: Build Android
+name: Build Android APK
 
 on:
   push:
@@ -63,12 +63,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python3 -c "
-import json
-body = open('mobile/android/build.log').read()
-body = body.replace('::', '→')
-print(json.dumps({'title': 'Android build debug ${{ github.run_id }}', 'body': body}))
-" > /tmp/issue-data.json
+          python3 -c "import json;body=open('mobile/android/build.log').read();body=body.replace('::','→');open('/tmp/issue-data.json','w').write(json.dumps({'title':'Android build debug ${{ github.run_id }}','body':body}))"
           curl -s -X POST \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
