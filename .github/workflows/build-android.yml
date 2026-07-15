@@ -26,35 +26,33 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Install deps
+      - name: Install SDK components
         run: |
           yes | sdkmanager --licenses
           sdkmanager "platforms;android-34" "build-tools;34.0.0"
-          wget -q https://services.gradle.org/distributions/gradle-8.9-bin.zip
-          sudo unzip -qo gradle-8.9-bin.zip -d /opt
-          echo "export PATH=/opt/gradle-8.9/bin:\$PATH" >> ~/.bashrc
-          export PATH=/opt/gradle-8.9/bin:$PATH
-          gradle wrapper --gradle-version 8.9 --no-daemon
-          echo "=== CHECK ==="
-          ls -la
-          java -version
-          gradle --version
-          echo "ANDROID_HOME=$ANDROID_HOME"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.9
+          gradle-home-cache-cleanup: true
+          cache-read-only: false
+
+      - name: Generate Gradle Wrapper
+        run: gradle wrapper --gradle-version 8.9 --no-daemon
 
       - name: Build debug APK
         run: |
-          export PATH=/opt/gradle-8.9/bin:$PATH
           echo "sdk.dir=$ANDROID_HOME" > local.properties
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT"
           echo "JAVA_HOME=$JAVA_HOME"
           ls -la $ANDROID_HOME/platforms/ 2>/dev/null || echo "No platforms dir"
           ls -la $ANDROID_HOME/build-tools/ 2>/dev/null || echo "No build-tools dir"
-          ls -la . 2>/dev/null
-          gradle assembleDebug --stacktrace --no-daemon 2>&1 | tee build.log
+          ./gradlew assembleDebug --stacktrace --no-daemon 2>&1 | tee build.log
           result=${PIPESTATUS[0]}
           if [ $result -ne 0 ]; then
-            echo "### ❌ Build failed — last 80 lines of build.log" >> $GITHUB_STEP_SUMMARY
+            echo "### Build failed — last 80 lines of build.log" >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
             tail -80 build.log >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
@@ -83,9 +81,8 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          export PATH=/opt/gradle-8.9/bin:$PATH
           echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > keystore.jks
-          ./gradlew assembleRelease --stacktrace
+          ./gradlew assembleRelease --stacktrace --no-daemon
           mv app/build/outputs/apk/release/app-release.apk \
              app/build/outputs/apk/release/RTeams-${{ github.ref_name }}.apk
 
