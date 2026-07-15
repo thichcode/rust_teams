@@ -46,31 +46,7 @@ jobs:
           ./gradlew assembleDebug --no-daemon 2>&1 | tee build.log
           exit ${PIPESTATUS[0]}
 
-      - name: Push build output to debug branch
-        if: failure()
-        run: |
-          cd "$GITHUB_WORKSPACE"
-          git config user.email "ci-bot@example.com"
-          git config user.name "CI Bot"
-          (git fetch origin ci-debug 2>/dev/null && git checkout -b ci-debug origin/ci-debug 2>/dev/null) || git checkout --orphan ci-debug
-          cp mobile/android/build.log ./build-output.txt
-          git add build-output.txt
-          git commit -m "build output from CI run"
-          git push origin ci-debug --force 2>&1 || true
-
-      - name: Create debug issue (backup)
-        if: failure()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          python3 -c "import json;body=open('mobile/android/build.log').read();body=body.replace('::','→');open('/tmp/issue-data.json','w').write(json.dumps({'title':'Android build debug ${{ github.run_id }}','body':body}))"
-          curl -s -X POST \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/$GITHUB_REPOSITORY/issues" \
-            -d @/tmp/issue-data.json || echo "issue creation failed"
-
-      - name: Upload build log
+      - name: Upload build log (on failure)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
