@@ -117,6 +117,8 @@ pub fn get_command_bar_script() -> String {
                 { name: 'time', desc: 'Show current time' },
                 { name: 'date', desc: 'Show current date' },
                 { name: 'hello', desc: 'Welcome message' },
+                { name: 'autoread', desc: 'Auto-read unread chats' },
+                { name: 'browser', desc: 'Show/change link browser' },
             ];
 
             function showDropdown() {
@@ -165,12 +167,21 @@ pub fn get_command_bar_script() -> String {
                 showDropdown();
             }
 
+            function getIpc() {
+                if (window.ipc && window.ipc.postMessage)
+                    return window.ipc.postMessage.bind(window.ipc);
+                if (window.chrome && window.chrome.webview && window.chrome.webview.postMessage)
+                    return window.chrome.webview.postMessage.bind(window.chrome.webview);
+                return null;
+            }
+
             function sendCommand(fullInput) {
                 const trimmed = fullInput.trim();
                 if (!trimmed) return;
-                if (window.ipc && window.ipc.postMessage) {
+                const ipc = getIpc();
+                if (ipc) {
                     renderThinking();
-                    window.ipc.postMessage(JSON.stringify({
+                    ipc(JSON.stringify({
                         type: 'bot_command',
                         data: { command: trimmed }
                     }));
