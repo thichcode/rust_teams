@@ -17,7 +17,7 @@ import androidx.webkit.WebViewCompat;
 import androidx.webkit.WebViewFeature;
 
 public class MainActivity extends AppCompatActivity {
-    private static final String TEAMS_URL = "https://teams.thichcode.com";
+    private static final String TEAMS_URL = "https://teams.microsoft.com";
     private WebView webView;
     private ProgressBar progressBar;
 
