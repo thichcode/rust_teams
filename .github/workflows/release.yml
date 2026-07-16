@@ -216,15 +216,13 @@ jobs:
           
           [rust_teams-windows-x64.zip](${BASE_URL}/rust_teams-windows-x64.zip) - Compressed archive (~2MB)
           
-          [RTeams-${TAG}-android.apk](${BASE_URL}/RTeams-${TAG}-android.apk) - Android APK (WebView wrapper)
-          
           ### Verify Download (SHA256)
           
           [rust_teams-windows-x64.exe.sha256](${BASE_URL}/rust_teams-windows-x64.exe.sha256)
           
           [rust_teams-windows-x64.zip.sha256](${BASE_URL}/rust_teams-windows-x64.zip.sha256)
           
-          APK is auto-built for each release (debug unsigned).
+          The in-app auto-updater verifies this checksum before installing an update.
           
           ### Features
           
