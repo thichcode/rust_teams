@@ -11,19 +11,25 @@ mod updater;
 use std::error::Error;
 use std::sync::{Arc, Mutex, OnceLock};
 
+use reqwest::Url;
 use tao::event::{Event, StartCause, WindowEvent};
-use tao::event_loop::{ControlFlow, EventLoop};
+use tao::event_loop::{ControlFlow, EventLoop, EventLoopBuilder, EventLoopProxy};
 #[cfg(target_os = "windows")]
 use tao::platform::windows::WindowExtWindows;
 use tao::window::{Icon, WindowBuilder};
+#[cfg(target_os = "windows")]
+use wry::WebViewExtWindows;
 use wry::{NewWindowFeatures, NewWindowResponse, WebViewBuilder, WebViewBuilderExtWindows};
 
 use app::AppConfig;
 use bot::{CommandRegistry, parse_command};
 use config::ConfigManager;
+use ui::AppEvent;
 use ui::auto_read::get_auto_read_script;
 use ui::badge::{parse_unread_count, play_notification_sound, update_taskbar_badge};
 use ui::browser::{BROWSER_PATH, handle_browser_command, open_in_new_window, open_url_smart};
+use ui::chat_popout::{get_chat_popout_script, is_teams_chat_url, is_trusted_teams_url};
+use ui::chat_window::ChatWindow;
 use ui::command_bar::get_command_bar_script;
 use ui::console::auto_hide_console;
 use ui::performance::get_all_optimization_scripts;
@@ -46,6 +52,75 @@ static WEBVIEW: OnceLock<WebViewHandle> = OnceLock::new();
 
 /// Cached update check result — avoids calling GitHub API twice.
 static UPDATE_RESULT: OnceLock<updater::UpdateCheck> = OnceLock::new();
+
+fn looks_like_chat_request(raw_url: &str) -> bool {
+    let Ok(url) = Url::parse(raw_url) else {
+        return false;
+    };
+
+    let path = url.path().to_ascii_lowercase();
+    path.starts_with("/l/chat/")
+        || path.starts_with("/chat/")
+        || (matches!(path.as_str(), "/v2" | "/v2/")
+            && url
+                .query_pairs()
+                .any(|(key, value)| key == "users" || (key == "ctx" && value == "chat")))
+}
+
+fn handle_new_window_request(url: String, proxy: &EventLoopProxy<AppEvent>) -> NewWindowResponse {
+    log::info!("Intercepted navigation: {url}");
+
+    if is_teams_chat_url(&url) {
+        log::info!("Opening Teams chat in the secondary window: {url}");
+        if let Err(error) = proxy.send_event(AppEvent::OpenChat(url)) {
+            log::error!("Failed to queue secondary chat window: {error}");
+        }
+        return NewWindowResponse::Deny;
+    }
+
+    let lower = url.to_lowercase();
+    let browser = BROWSER_PATH
+        .get()
+        .and_then(|value| value.lock().ok())
+        .and_then(|value| value.clone());
+    let is_teams_internal = is_trusted_teams_url(&url);
+    let is_popout = lower.contains("/l/person/") || lower.contains("/l/channel/");
+
+    if is_teams_internal && is_popout {
+        log::info!("Routing Teams pop-out to a new Edge window: {url}");
+        if let Err(error) = open_in_new_window(&url) {
+            log::warn!("Failed to open in a new window: {error}");
+            let _ = open_url_smart(&url, browser.as_deref());
+        }
+        return NewWindowResponse::Deny;
+    }
+
+    if lower.contains("/meet/")
+        || lower.contains("/call/")
+        || lower.contains("meetup-join")
+        || lower.contains("teams.live.com/meet")
+    {
+        log::info!("Routing meet/call URL with the existing browser behavior: {url}");
+        if let Err(error) = open_url_smart(&url, browser.as_deref()) {
+            log::warn!("Failed to open meet URL: {error}");
+        }
+        return NewWindowResponse::Deny;
+    }
+
+    if looks_like_chat_request(&url) {
+        log::warn!("Denying chat-shaped popup rejected by the Teams chat classifier: {url}");
+        return NewWindowResponse::Deny;
+    }
+
+    if is_teams_internal {
+        NewWindowResponse::Allow
+    } else {
+        if let Err(error) = open_url_smart(&url, browser.as_deref()) {
+            log::warn!("Failed to open URL: {error}");
+        }
+        NewWindowResponse::Deny
+    }
+}
 
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
@@ -132,7 +207,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
 
     // Create event loop and window
-    let event_loop = EventLoop::new();
+    let event_loop: EventLoop<AppEvent> = EventLoopBuilder::<AppEvent>::with_user_event().build();
+    let proxy = event_loop.create_proxy();
     let mut window_builder = WindowBuilder::new()
         .with_title(format!("R Teams v{}", updater::current_version()))
         .with_inner_size(tao::dpi::LogicalSize::new(
@@ -159,6 +235,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     #[cfg(not(target_os = "windows"))]
     let hwnd = 0isize;
 
+    let main_window_id = window.id();
+
     // Shared state for badge count
     let badge_count = Arc::new(Mutex::new(0u32));
     let badge_count_clone = badge_count.clone();
@@ -168,6 +246,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let auto_read_js = get_auto_read_script();
     let perf_js = get_all_optimization_scripts();
     let command_bar_js = get_command_bar_script();
+    let chat_popout_js = get_chat_popout_script();
 
     // Build Chromium / WebView2 browser flags từ memory config
     let browser_args = memory::build_browser_args(&config.memory_optimization);
@@ -177,12 +256,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let cm_for_ipc = config_manager.clone();
+    let proxy_for_popouts = proxy.clone();
     let mut webview_builder = WebViewBuilder::new()
         .with_url(&teams_url)
         .with_additional_browser_args(&browser_args)
         .with_initialization_script(&auto_read_js)
         .with_initialization_script(&perf_js)
         .with_initialization_script(&command_bar_js)
+        .with_initialization_script(&chat_popout_js)
         .with_document_title_changed_handler(move |title: String| {
             if let Some(count) = parse_unread_count(&title) {
                 let mut current_count = badge_count_clone.lock().unwrap();
@@ -200,50 +281,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
         })
-        .with_new_window_req_handler(|url: String, _features: NewWindowFeatures| {
-            log::info!("Intercepted navigation: {}", url);
-
-            let lower = url.to_lowercase();
-            let browser = BROWSER_PATH.get()
-                .and_then(|m| m.lock().ok())
-                .and_then(|g| g.clone());
-
-            let is_teams_internal = lower.contains("teams.microsoft.com")
-                || lower.contains("teams.live.com");
-            let is_popout = lower.contains("/l/chat/")
-                || lower.contains("/l/person/")
-                || lower.contains("/l/channel/")
-                || lower.contains("users=");
-
-            if is_teams_internal && is_popout {
-                log::info!("Routing Teams pop-out to new Edge window: {}", url);
-                if let Err(e) = open_in_new_window(&url) {
-                    log::warn!("Failed to open in new window, fallback: {}", e);
-                    let _ = open_url_smart(&url, browser.as_deref());
-                }
-                return NewWindowResponse::Deny;
-            }
-
-            if lower.contains("/meet/")
-                || lower.contains("/call/")
-                || lower.contains("meetup-join")
-                || lower.contains("teams.live.com/meet")
-            {
-                log::info!("Routing meet/call URL to system browser: {}", url);
-                if let Err(e) = open_url_smart(&url, browser.as_deref()) {
-                    log::warn!("Failed to open meet URL: {}", e);
-                }
-                return NewWindowResponse::Deny;
-            }
-
-            if is_teams_internal {
-                NewWindowResponse::Allow
-            } else {
-                if let Err(e) = open_url_smart(&url, browser.as_deref()) {
-                    log::warn!("Failed to open URL: {}", e);
-                }
-                NewWindowResponse::Deny
-            }
+        .with_new_window_req_handler(move |url: String, _features: NewWindowFeatures| {
+            handle_new_window_request(url, &proxy_for_popouts)
         })
          .with_ipc_handler(move |message| {
             let body = message.body();
@@ -309,6 +348,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         .build(&window)
         .map_err(|e| -> Box<dyn Error> { format!("Failed to create WebView: {}", e).into() })?;
 
+    #[cfg(target_os = "windows")]
+    let webview_environment = webview.environment();
+
     #[allow(clippy::arc_with_non_send_sync)]
     let wv_arc = Arc::new(webview);
     let _ = WEBVIEW.set(WebViewHandle(wv_arc.clone()));
@@ -336,36 +378,89 @@ fn main() -> Result<(), Box<dyn Error>> {
     let cm_for_save = config_manager;
     let mut config_for_save = config.clone();
 
-    event_loop.run(move |event, _, control_flow| {
+    let mut chat_window: Option<ChatWindow> = None;
+
+    event_loop.run(move |event, event_loop, control_flow| {
         *control_flow = ControlFlow::Wait;
 
         match event {
             Event::NewEvents(StartCause::Init) => {
                 log::info!("R Teams initialized");
             }
-            Event::WindowEvent {
-                event: WindowEvent::CloseRequested,
-                ..
-            } => {
-                log::info!("Close requested, shutting down...");
-                #[cfg(target_os = "windows")]
-                unsafe {
-                    use winapi::um::winuser::GetWindowRect;
-                    let mut rect = std::mem::zeroed();
-                    if GetWindowRect(hwnd as _, &mut rect) != 0 {
-                        config_for_save.window_settings.width = (rect.right - rect.left) as u32;
-                        config_for_save.window_settings.height = (rect.bottom - rect.top) as u32;
+            Event::UserEvent(AppEvent::OpenChat(url)) => {
+                let needs_new_window = match chat_window.as_ref() {
+                    Some(window) => match window.navigate_and_focus(&url) {
+                        Ok(()) => false,
+                        Err(error) => {
+                            log::warn!("Failed to navigate the secondary chat window: {error}");
+                            true
+                        }
+                    },
+                    None => true,
+                };
+
+                if needs_new_window {
+                    chat_window = None;
+                    let proxy_for_secondary = proxy.clone();
+                    let builder = WebViewBuilder::new()
+                        .with_initialization_script(chat_popout_js.clone())
+                        .with_new_window_req_handler(
+                            move |url: String, _features: NewWindowFeatures| {
+                                handle_new_window_request(url, &proxy_for_secondary)
+                            },
+                        );
+                    #[cfg(target_os = "windows")]
+                    let builder = builder.with_environment(webview_environment.clone());
+
+                    match ChatWindow::create(event_loop, builder) {
+                        Ok(window) => match window.navigate_and_focus(&url) {
+                            Ok(()) => chat_window = Some(window),
+                            Err(error) => {
+                                log::error!(
+                                    "Failed to navigate the new secondary chat window: {error}"
+                                );
+                            }
+                        },
+                        Err(error) => {
+                            log::error!("Failed to create secondary chat window: {error}");
+                        }
                     }
                 }
-                if let Err(e) = cm_for_save.save(&config_for_save) {
-                    log::warn!("Failed to save config on close: {e}");
+            }
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                window_id,
+                ..
+            } => {
+                if window_id == main_window_id {
+                    log::info!("Main window close requested, shutting down...");
+                    #[cfg(target_os = "windows")]
+                    unsafe {
+                        use winapi::um::winuser::GetWindowRect;
+                        let mut rect = std::mem::zeroed();
+                        if GetWindowRect(hwnd as _, &mut rect) != 0 {
+                            config_for_save.window_settings.width = (rect.right - rect.left) as u32;
+                            config_for_save.window_settings.height =
+                                (rect.bottom - rect.top) as u32;
+                        }
+                    }
+                    if let Err(e) = cm_for_save.save(&config_for_save) {
+                        log::warn!("Failed to save config on close: {e}");
+                    }
+                    *control_flow = ControlFlow::Exit;
+                } else if chat_window
+                    .as_ref()
+                    .is_some_and(|window| window.window_id() == window_id)
+                {
+                    log::info!("Secondary chat window closed");
+                    chat_window = None;
                 }
-                *control_flow = ControlFlow::Exit;
             }
             Event::WindowEvent {
                 event: WindowEvent::Destroyed,
+                window_id,
                 ..
-            } => {
+            } if window_id == main_window_id => {
                 *control_flow = ControlFlow::Exit;
             }
             _ => {}
@@ -427,4 +522,40 @@ fn get_teams_url(config: &AppConfig) -> String {
     }
 
     "https://teams.microsoft.com".to_string()
+}
+
+#[cfg(test)]
+mod popup_routing_tests {
+    use super::looks_like_chat_request;
+
+    #[test]
+    fn rejects_query_hint_on_external_admin_path() {
+        assert!(!looks_like_chat_request(
+            "https://example.com/admin?users=alice"
+        ));
+    }
+
+    #[test]
+    fn recognizes_http_teams_v2_query_hint_without_trusting_it() {
+        assert!(looks_like_chat_request(
+            "http://teams.microsoft.com/v2?users=alice"
+        ));
+    }
+
+    #[test]
+    fn recognizes_direct_untrusted_chat_path() {
+        assert!(looks_like_chat_request("https://evil.example/l/chat/0/0"));
+    }
+
+    #[test]
+    fn rejects_normal_external_url_as_chat_shape() {
+        assert!(!looks_like_chat_request("https://example.com/docs"));
+    }
+
+    #[test]
+    fn rejects_query_hint_on_person_path() {
+        assert!(!looks_like_chat_request(
+            "https://teams.microsoft.com/l/person/alice?users=bob@example.com"
+        ));
+    }
 }
