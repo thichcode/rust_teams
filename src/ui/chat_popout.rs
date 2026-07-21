@@ -75,6 +75,10 @@ pub fn get_chat_popout_script() -> String {
     const BUTTON_CLASS = 'rteams-chat-popout-button';
     const PORTAL_CLASS = 'rteams-chat-popout-portal';
     const PORTAL_VISIBLE_CLASS = 'rteams-chat-popout-portal-visible';
+    const DEBUG = false;
+    function dbg() {
+        if (DEBUG) console.log.apply(console, ['[RTeams]'].concat(Array.prototype.slice.call(arguments)));
+    }
     const FOCUSABLE_SELECTOR = [
         'a[href]',
         'button',
@@ -88,7 +92,10 @@ pub fn get_chat_popout_script() -> String {
         '[data-tid="chat-item"]',
         '[data-tid^="chat-item-"]',
         '[role="listitem"][data-tid*="chat-item"]',
-        '[role="option"][data-tid*="chat-item"]'
+        '[role="option"][data-tid*="chat-item"]',
+        '[data-automationid^="chat"]',
+        '[data-testid^="chat"]',
+        '[data-tid*="conversation"]'
     ].join(',');
     const SEMANTIC_ROW_SELECTOR = '[role="listitem"], [role="option"]';
     const MARKED_ROW_SELECTOR = `[${READY_ATTRIBUTE}], [${WARNED_ATTRIBUTE}], [${ACTION_ATTRIBUTE}]`;
@@ -675,12 +682,15 @@ pub fn get_chat_popout_script() -> String {
 
     function decorateInitialRows() {
         const rows = new Set();
-        document.querySelectorAll(ROW_SELECTOR).forEach(function (candidate) {
+        var candidates = document.querySelectorAll(ROW_SELECTOR);
+        dbg('Found', candidates.length, 'candidates with ROW_SELECTOR');
+        candidates.forEach(function (candidate) {
             const row = canonicalLogicalRow(candidate);
             if (row) {
                 rows.add(row);
             }
         });
+        dbg('Decorating', rows.size, 'initial rows');
         rows.forEach(decorateRow);
     }
 
@@ -894,11 +904,14 @@ pub fn get_chat_popout_script() -> String {
     }
 
     function initialize() {
+        console.log('[RTeams] Chat popout script initialized');
+        dbg('debug mode enabled');
         ensureStyle();
         decorateInitialRows();
 
         observer = new MutationObserver(handleMutations);
         observeMutations();
+        dbg('MutationObserver started');
     }
 
     if (document.readyState === 'loading') {

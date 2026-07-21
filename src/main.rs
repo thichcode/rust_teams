@@ -34,6 +34,40 @@ use ui::performance::get_all_optimization_scripts;
 /// Cached update check result — avoids calling GitHub API twice.
 static UPDATE_RESULT: OnceLock<updater::UpdateCheck> = OnceLock::new();
 
+fn handle_navigation(url: String) -> bool {
+    log::info!("Navigation: {url}");
+
+    if is_trusted_teams_url(&url) {
+        return true;
+    }
+
+    if let Ok(parsed) = Url::parse(&url) {
+        let host = parsed.host_str().unwrap_or("");
+        if host == "login.microsoftonline.com"
+            || host.ends_with(".microsoftonline.com")
+            || host == "www.microsoft.com"
+            || host == "support.microsoft.com"
+        {
+            return true;
+        }
+    }
+
+    if url.starts_with("http://") || url.starts_with("https://") {
+        let browser = BROWSER_PATH
+            .get()
+            .and_then(|value| value.lock().ok())
+            .and_then(|value| value.clone());
+
+        log::info!("Opening external URL in browser: {url}");
+        if let Err(error) = open_url_smart(&url, browser.as_deref()) {
+            log::warn!("Failed to open external URL: {error}");
+        }
+        return false;
+    }
+
+    true
+}
+
 fn looks_like_chat_request(raw_url: &str) -> bool {
     let Ok(url) = Url::parse(raw_url) else {
         return false;
@@ -259,6 +293,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
         })
+        .with_navigation_handler(handle_navigation)
         .with_new_window_req_handler(move |url: String, _features: NewWindowFeatures| {
             handle_new_window_request(url, &proxy_for_popouts)
         });
@@ -328,6 +363,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let proxy_for_secondary = proxy.clone();
                     let builder = WebViewBuilder::new()
                         .with_initialization_script(chat_popout_js.clone())
+                        .with_navigation_handler(handle_navigation)
                         .with_new_window_req_handler(
                             move |url: String, _features: NewWindowFeatures| {
                                 handle_new_window_request(url, &proxy_for_secondary)
