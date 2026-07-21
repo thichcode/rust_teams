@@ -2,7 +2,6 @@
 //! Features: Auto-update, Memory Optimization, Badge Notifications, URL Interception
 
 mod app;
-mod bot;
 mod config;
 mod memory;
 mod ui;
@@ -22,33 +21,15 @@ use wry::WebViewExtWindows;
 use wry::{NewWindowFeatures, NewWindowResponse, WebViewBuilder, WebViewBuilderExtWindows};
 
 use app::AppConfig;
-use bot::{CommandRegistry, parse_command};
 use config::ConfigManager;
 use ui::AppEvent;
 use ui::auto_read::get_auto_read_script;
 use ui::badge::{parse_unread_count, play_notification_sound, update_taskbar_badge};
-use ui::browser::{BROWSER_PATH, handle_browser_command, open_in_new_window, open_url_smart};
+use ui::browser::{BROWSER_PATH, open_in_new_window, open_url_smart};
 use ui::chat_popout::{get_chat_popout_script, is_teams_chat_url, is_trusted_teams_url};
 use ui::chat_window::ChatWindow;
-use ui::command_bar::get_command_bar_script;
 use ui::console::auto_hide_console;
 use ui::performance::get_all_optimization_scripts;
-
-/// Global cached CommandRegistry — created once on first IPC call, reused for all subsequent commands.
-static BOT_REGISTRY: OnceLock<CommandRegistry> = OnceLock::new();
-
-fn bot_registry() -> &'static CommandRegistry {
-    BOT_REGISTRY.get_or_init(CommandRegistry::new)
-}
-
-/// WebView stored once after build, safe for the event loop lifetime.
-/// wry::WebView is !Send+!Sync (contains RefCell<HWND>), but is accessed
-/// exclusively from the event-loop thread where the IPC callback runs.
-struct WebViewHandle(Arc<wry::WebView>);
-unsafe impl Send for WebViewHandle {}
-unsafe impl Sync for WebViewHandle {}
-
-static WEBVIEW: OnceLock<WebViewHandle> = OnceLock::new();
 
 /// Cached update check result — avoids calling GitHub API twice.
 static UPDATE_RESULT: OnceLock<updater::UpdateCheck> = OnceLock::new();
@@ -245,7 +226,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Build WebView with memory optimization and title change handler
     let auto_read_js = get_auto_read_script();
     let perf_js = get_all_optimization_scripts();
-    let command_bar_js = get_command_bar_script();
     let chat_popout_js = get_chat_popout_script();
 
     // Build Chromium / WebView2 browser flags từ memory config
@@ -255,14 +235,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         log::info!("WebView2 args: {}", browser_args);
     }
 
-    let cm_for_ipc = config_manager.clone();
     let proxy_for_popouts = proxy.clone();
     let mut webview_builder = WebViewBuilder::new()
         .with_url(&teams_url)
         .with_additional_browser_args(&browser_args)
         .with_initialization_script(&auto_read_js)
         .with_initialization_script(&perf_js)
-        .with_initialization_script(&command_bar_js)
         .with_initialization_script(&chat_popout_js)
         .with_document_title_changed_handler(move |title: String| {
             if let Some(count) = parse_unread_count(&title) {
@@ -283,59 +261,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         })
         .with_new_window_req_handler(move |url: String, _features: NewWindowFeatures| {
             handle_new_window_request(url, &proxy_for_popouts)
-        })
-         .with_ipc_handler(move |message| {
-            let body = message.body();
-            if let Ok(msg) = serde_json::from_str::<serde_json::Value>(body) {
-                let msg_type = msg["type"].as_str().unwrap_or("");
-
-                if msg_type == "bot_command" {
-                    let command_str = msg["data"]["command"].as_str().unwrap_or("");
-                    log::info!("Bot command: {}", command_str);
-                    let registry = bot_registry();
-                    let (cmd, args) = match parse_command(command_str) {
-                        Some((c, a)) => (c, a),
-                        None => ("", ""),
-                    };
-                    let result = if cmd.is_empty() {
-                        let list: Vec<String> = registry.commands().iter()
-                            .map(|c| format!("/{} — {}", c.name, c.description))
-                            .collect();
-                        bot::commands::CommandResult { output: list.join("\n") }
-                    } else {
-                        registry.execute(cmd, args)
-                    };
-                    if let Some(wv) = WEBVIEW.get() {
-                        if cmd == "autoread" {
-                            let _ = wv.0.evaluate_script("processChats()");
-                        }
-                        if cmd == "browser" {
-                            let output = handle_browser_command(args);
-                            if let (Some(path), Some(bp)) = (output.new_browser, BROWSER_PATH.get())
-                            {
-                                *bp.lock().unwrap() = path;
-                                if let Ok(mut cfg) = cm_for_ipc.load() {
-                                    cfg.browser_path = BROWSER_PATH.get()
-                                        .and_then(|m| m.lock().ok())
-                                        .and_then(|g| g.clone());
-                                    let _ = cm_for_ipc.save(&cfg);
-                                }
-                            }
-                            let js = format!(
-                                "window.dispatchEvent(new CustomEvent('rteams-bot-response', {{ detail: {{ output: '{}' }} }}));",
-                                output.message.replace('\\', "\\\\").replace('\'', "\\'"),
-                            );
-                            let _ = wv.0.evaluate_script(&js);
-                            return;
-                        }
-                        let js = format!(
-                            "window.dispatchEvent(new CustomEvent('rteams-bot-response', {{ detail: {{ output: '{}' }} }}));",
-                            result.output.replace('\\', "\\\\").replace('\'', "\\'"),
-                        );
-                        let _ = wv.0.evaluate_script(&js);
-                    }
-                }
-            }
         });
 
     if config.memory_optimization.enabled {
@@ -353,7 +278,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     #[allow(clippy::arc_with_non_send_sync)]
     let wv_arc = Arc::new(webview);
-    let _ = WEBVIEW.set(WebViewHandle(wv_arc.clone()));
     let _webview_keepalive = wv_arc;
 
     // Use cached update check result (no second API call)

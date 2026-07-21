@@ -5,7 +5,6 @@ pub mod badge;
 pub mod browser;
 pub mod chat_popout;
 pub mod chat_window;
-pub mod command_bar;
 pub mod console;
 pub mod performance;
 
