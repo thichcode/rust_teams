@@ -1,0 +1,72 @@
+name: Build
+
+on:
+  push:
+    branches-ignore: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build Binaries
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-build-
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --features dioxus-shell -- -D warnings
+
+      - name: Build (default features)
+        run: cargo build --workspace --release
+
+      - name: Build (dioxus-shell)
+        run: cargo build --features dioxus-shell --bin rust-teams-dioxus --release
+
+      - name: Run tests
+        run: cargo test --workspace --features dioxus-shell --verbose
+
+      - name: Prepare artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path artifacts -Force
+          Copy-Item target/release/rust_teams.exe artifacts/rust_teams-windows-x64.exe
+          Copy-Item target/release/rust-teams-dioxus.exe artifacts/rust-teams-dioxus-windows-x64.exe
+          Get-ChildItem artifacts/ | Select-Object Name, Length
+
+      - name: Upload main binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust_teams-windows-x64
+          path: artifacts/rust_teams-windows-x64.exe
+          retention-days: 30
+
+      - name: Upload dioxus binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-teams-dioxus-windows-x64
+          path: artifacts/rust-teams-dioxus-windows-x64.exe
+          retention-days: 30
