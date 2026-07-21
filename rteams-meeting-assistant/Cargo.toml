@@ -23,6 +23,6 @@ tray-icon = "0.19"
 global-hotkey = "0.8"
 
 [target.'cfg(windows)'.dependencies]
-cpal = "0.13"
+cpal = "0.18"
 wasapi = "0.20"
 winapi = { version = "0.3", features = ["namedpipeapi", "winbase", "synchapi"] }
