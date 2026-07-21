@@ -34,6 +34,35 @@ use ui::performance::get_all_optimization_scripts;
 /// Cached update check result — avoids calling GitHub API twice.
 static UPDATE_RESULT: OnceLock<updater::UpdateCheck> = OnceLock::new();
 
+fn parse_webview_event(body: &str) -> Option<AppEvent> {
+    let message = serde_json::from_str::<serde_json::Value>(body).ok()?;
+    let message_type = message.get("type")?.as_str()?;
+    let url = message.get("data")?.get("url")?.as_str()?;
+
+    match message_type {
+        "open_chat" if is_teams_chat_url(url) => Some(AppEvent::OpenChat(url.to_owned())),
+        "open_external" => {
+            let parsed = Url::parse(url).ok()?;
+            if matches!(parsed.scheme(), "http" | "https") && !is_trusted_teams_url(url) {
+                Some(AppEvent::OpenExternal(url.to_owned()))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn queue_webview_event(body: &str, proxy: &EventLoopProxy<AppEvent>) {
+    let Some(event) = parse_webview_event(body) else {
+        log::warn!("Ignored invalid WebView IPC message");
+        return;
+    };
+    if let Err(error) = proxy.send_event(event) {
+        log::error!("Failed to queue WebView event: {error}");
+    }
+}
+
 fn handle_navigation(url: String) -> bool {
     log::info!("Navigation: {url}");
 
@@ -270,6 +299,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let proxy_for_popouts = proxy.clone();
+    let proxy_for_ipc = proxy.clone();
     let mut webview_builder = WebViewBuilder::new()
         .with_url(&teams_url)
         .with_additional_browser_args(&browser_args)
@@ -296,6 +326,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         .with_navigation_handler(handle_navigation)
         .with_new_window_req_handler(move |url: String, _features: NewWindowFeatures| {
             handle_new_window_request(url, &proxy_for_popouts)
+        })
+        .with_ipc_handler(move |message| {
+            queue_webview_event(message.body(), &proxy_for_ipc);
         });
 
     if config.memory_optimization.enabled {
@@ -346,6 +379,16 @@ fn main() -> Result<(), Box<dyn Error>> {
             Event::NewEvents(StartCause::Init) => {
                 log::info!("R Teams initialized");
             }
+            Event::UserEvent(AppEvent::OpenExternal(url)) => {
+                let browser = BROWSER_PATH
+                    .get()
+                    .and_then(|value| value.lock().ok())
+                    .and_then(|value| value.clone());
+                log::info!("Opening external link from WebView IPC: {url}");
+                if let Err(error) = open_url_smart(&url, browser.as_deref()) {
+                    log::warn!("Failed to open external URL: {error}");
+                }
+            }
             Event::UserEvent(AppEvent::OpenChat(url)) => {
                 let needs_new_window = match chat_window.as_ref() {
                     Some(window) => match window.navigate_and_focus(&url) {
@@ -361,6 +404,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 if needs_new_window {
                     chat_window = None;
                     let proxy_for_secondary = proxy.clone();
+                    let proxy_for_secondary_ipc = proxy.clone();
                     let builder = WebViewBuilder::new()
                         .with_initialization_script(chat_popout_js.clone())
                         .with_navigation_handler(handle_navigation)
@@ -368,7 +412,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                             move |url: String, _features: NewWindowFeatures| {
                                 handle_new_window_request(url, &proxy_for_secondary)
                             },
-                        );
+                        )
+                        .with_ipc_handler(move |message| {
+                            queue_webview_event(message.body(), &proxy_for_secondary_ipc);
+                        });
                     #[cfg(target_os = "windows")]
                     let builder = builder.with_environment(webview_environment.clone());
 
@@ -486,7 +533,37 @@ fn get_teams_url(config: &AppConfig) -> String {
 
 #[cfg(test)]
 mod popup_routing_tests {
-    use super::looks_like_chat_request;
+    use super::{looks_like_chat_request, parse_webview_event};
+    use crate::ui::AppEvent;
+
+    #[test]
+    fn parses_chat_open_ipc_event() {
+        let body = r#"{"type":"open_chat","data":{"url":"https://teams.microsoft.com/v2/?ctx=chat&chatId=19%3Aabc%40thread.v2"}}"#;
+
+        match parse_webview_event(body) {
+            Some(AppEvent::OpenChat(url)) => assert!(url.contains("chatId=19%3Aabc")),
+            event => panic!("unexpected event: {event:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_external_microsoft_link_ipc_event() {
+        let body = r#"{"type":"open_external","data":{"url":"https://enterpriseenrollment.manage.microsoft.com/"}}"#;
+
+        match parse_webview_event(body) {
+            Some(AppEvent::OpenExternal(url)) => {
+                assert_eq!(url, "https://enterpriseenrollment.manage.microsoft.com/")
+            }
+            event => panic!("unexpected event: {event:?}"),
+        }
+    }
+
+    #[test]
+    fn rejects_non_web_external_ipc_event() {
+        let body = r#"{"type":"open_external","data":{"url":"javascript:alert(1)"}}"#;
+
+        assert!(parse_webview_event(body).is_none());
+    }
 
     #[test]
     fn rejects_query_hint_on_external_admin_path() {

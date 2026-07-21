@@ -36,27 +36,39 @@ pub fn is_teams_chat_url(raw_url: &str) -> bool {
             segment,
             "channel" | "meet" | "meeting" | "call" | "meetup" | "meetup-join"
         )
-    }) {
-        return false;
-    }
-
-    if path.starts_with("/l/chat/") || path.starts_with("/chat/") {
-        return true;
-    }
-    if !matches!(path.as_str(), "/v2" | "/v2/") {
+    }) || path.contains("19:meeting_")
+        || path.contains("19%3ameeting_")
+    {
         return false;
     }
 
     let mut has_users = false;
     let mut has_chat_context = false;
     let mut has_chat_id = false;
+    let mut has_invalid_chat_id = false;
     for (key, value) in url.query_pairs() {
         match key.as_ref() {
             "users" if !value.is_empty() => has_users = true,
             "ctx" if value == "chat" => has_chat_context = true,
-            "chatId" if !value.is_empty() => has_chat_id = true,
+            "chatId" => {
+                if value.starts_with("19:") && !value.starts_with("19:meeting_") {
+                    has_chat_id = true;
+                } else {
+                    has_invalid_chat_id = true;
+                }
+            }
             _ => {}
         }
+    }
+
+    if has_invalid_chat_id {
+        return false;
+    }
+    if path.starts_with("/l/chat/") || path.starts_with("/chat/") {
+        return true;
+    }
+    if !matches!(path.as_str(), "/v2" | "/v2/") {
+        return false;
     }
 
     has_users || (has_chat_context && has_chat_id)
@@ -89,22 +101,33 @@ pub fn get_chat_popout_script() -> String {
         '[contenteditable]:not([contenteditable="false"])'
     ].join(',');
     const ROW_SELECTOR = [
-        '[data-tid="chat-item"]',
-        '[data-tid^="chat-item-"]',
-        '[role="listitem"][data-tid*="chat-item"]',
-        '[role="option"][data-tid*="chat-item"]',
-        '[data-automationid^="chat"]',
-        '[data-testid^="chat"]',
-        '[data-tid*="conversation"]'
+        '[role="treeitem"][data-testid="list-item"][data-item-type="chat"]',
+        '[role="treeitem"][data-testid="list-item"][data-item-type="muted-chat"]'
     ].join(',');
     const SEMANTIC_ROW_SELECTOR = '[role="listitem"], [role="option"]';
     const MARKED_ROW_SELECTOR = `[${READY_ATTRIBUTE}], [${WARNED_ATTRIBUTE}], [${ACTION_ATTRIBUTE}]`;
-    const INVALIDATING_ATTRIBUTES = new Set(['href', 'data-tid', 'role']);
+    const INVALIDATING_ATTRIBUTES = new Set([
+        'href',
+        'data-tid',
+        'data-testid',
+        'data-item-type',
+        'data-fui-tree-item-value',
+        'role'
+    ]);
     const OBSERVER_OPTIONS = {
         childList: true,
         subtree: true,
         attributes: true,
-        attributeFilter: ['href', 'data-tid', 'role', 'class', 'style']
+        attributeFilter: [
+            'href',
+            'data-tid',
+            'data-testid',
+            'data-item-type',
+            'data-fui-tree-item-value',
+            'role',
+            'class',
+            'style'
+        ]
     };
     const pendingRows = new Set();
     const actionByRow = new WeakMap();
@@ -125,14 +148,28 @@ pub fn get_chat_popout_script() -> String {
         });
     }
 
+    function hasInvalidChatId(url) {
+        const chatIds = url.searchParams.getAll('chatId');
+        return chatIds.some(function (chatId) {
+            return !chatId.startsWith('19:') || chatId.startsWith('19:meeting_');
+        });
+    }
+
     function isV2ChatQuery(url, path) {
         if (path !== '/v2' && path !== '/v2/') {
             return false;
         }
 
+        if (hasInvalidChatId(url)) {
+            return false;
+        }
+
+        const chatIds = url.searchParams.getAll('chatId');
         const hasUsers = hasNonEmptyQueryValue(url, 'users');
         const hasChatContext = url.searchParams.getAll('ctx').includes('chat');
-        const hasChatId = hasNonEmptyQueryValue(url, 'chatId');
+        const hasChatId = chatIds.some(function (chatId) {
+            return chatId.length > 0;
+        });
         return hasUsers || (hasChatContext && hasChatId);
     }
 
@@ -149,7 +186,13 @@ pub fn get_chat_popout_script() -> String {
         }
 
         const path = url.pathname.toLowerCase();
-        const rejectedPath = path.split('/').some(function (segment) {
+        let decodedPath = path;
+        try {
+            decodedPath = decodeURIComponent(path);
+        } catch (_error) {
+            return false;
+        }
+        const rejectedPath = decodedPath.split('/').some(function (segment) {
             return segment === 'channel' ||
                 segment === 'meet' ||
                 segment === 'meeting' ||
@@ -157,7 +200,7 @@ pub fn get_chat_popout_script() -> String {
                 segment === 'meetup' ||
                 segment === 'meetup-join';
         });
-        if (rejectedPath) {
+        if (rejectedPath || decodedPath.includes('19:meeting_') || hasInvalidChatId(url)) {
             return false;
         }
 
@@ -165,6 +208,54 @@ pub fn get_chat_popout_script() -> String {
             return true;
         }
         return isV2ChatQuery(url, path);
+    }
+
+    function isTrustedTeamsUrl(url) {
+        if (url.protocol !== 'https:') {
+            return false;
+        }
+        const host = url.hostname.toLowerCase();
+        return host === 'teams.microsoft.com' ||
+            host.endsWith('.teams.microsoft.com') ||
+            host === 'teams.live.com';
+    }
+
+    function postToHost(type, url) {
+        if (!window.chrome || !window.chrome.webview ||
+            !window.chrome.webview.postMessage) {
+            return false;
+        }
+        window.chrome.webview.postMessage(JSON.stringify({
+            type: type,
+            data: { url: url }
+        }));
+        return true;
+    }
+
+    function handleExternalLinkClick(event) {
+        if (!(event.target instanceof Element)) {
+            return;
+        }
+        const anchor = event.target.closest('a[href]');
+        if (!anchor || anchor.target !== '_blank') {
+            return;
+        }
+
+        let url;
+        try {
+            url = new URL(anchor.getAttribute('href'), location.origin);
+        } catch (_error) {
+            return;
+        }
+        if ((url.protocol !== 'http:' && url.protocol !== 'https:') ||
+            isTrustedTeamsUrl(url)) {
+            return;
+        }
+
+        if (postToHost('open_external', url.href)) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }
     }
 
     function canonicalLogicalRow(candidate) {
@@ -208,6 +299,20 @@ pub fn get_chat_popout_script() -> String {
     }
 
     function resolveRowUrl(row) {
+        const itemType = row.getAttribute('data-item-type');
+        const treeValue = row.getAttribute('data-fui-tree-item-value');
+        if ((itemType === 'chat' || itemType === 'muted-chat') && treeValue) {
+            const chatId = treeValue.split('|').pop();
+            if (chatId && chatId.startsWith('19:') && !chatId.startsWith('19:meeting_')) {
+                const url = new URL('/v2/', location.origin);
+                url.searchParams.set('ctx', 'chat');
+                url.searchParams.set('chatId', chatId);
+                if (isChatUrl(url)) {
+                    return url.href;
+                }
+            }
+        }
+
         const anchors = new Set();
         const trigger = interactionTrigger(row);
         if (trigger.matches('a[href]')) {
@@ -253,7 +358,7 @@ pub fn get_chat_popout_script() -> String {
     function warnInvalidRow(row) {
         if (!row.hasAttribute(WARNED_ATTRIBUTE)) {
             row.setAttribute(WARNED_ATTRIBUTE, 'true');
-            console.warn('[RTeams] Chat row has no valid Teams chat URL.', row);
+            console.warn('[RTeams] Chat row has no valid Teams chat URL.');
         }
     }
 
@@ -350,10 +455,12 @@ pub fn get_chat_popout_script() -> String {
 
             const chatUrl = resolveRowUrl(row);
             if (!chatUrl) {
-                console.warn('[RTeams] Chat URL is no longer available.', row);
+                console.warn('[RTeams] Chat URL is no longer available.');
                 return;
             }
-            window.open(chatUrl, '_blank', 'popup=yes');
+            if (!postToHost('open_chat', chatUrl)) {
+                window.open(chatUrl, '_blank', 'popup=yes');
+            }
         });
 
         return button;
@@ -906,6 +1013,7 @@ pub fn get_chat_popout_script() -> String {
     function initialize() {
         console.log('[RTeams] Chat popout script initialized');
         dbg('debug mode enabled');
+        document.addEventListener('click', handleExternalLinkClick, true);
         ensureStyle();
         decorateInitialRows();
 
@@ -934,15 +1042,32 @@ mod tests {
 
         assert!(script.contains("data-rteams-chat-popout-ready"));
         assert!(script.contains("MutationObserver"));
-        assert!(script.contains("window.open(chatUrl"));
+        assert!(script.contains("[role=\"treeitem\"][data-testid=\"list-item\"]"));
+        assert!(script.contains("[data-item-type=\"chat\"]"));
+        assert!(script.contains("[data-item-type=\"muted-chat\"]"));
+        assert!(script.contains("data-fui-tree-item-value"));
+        assert!(script.contains("treeValue.split('|').pop()"));
+        assert!(script.contains("url.searchParams.set('chatId', chatId)"));
+        assert!(script.contains("!chatId.startsWith('19:meeting_')"));
+        assert!(script.contains("window.chrome.webview.postMessage"));
+        assert!(script.contains("postToHost('open_chat'"));
+        assert!(script.contains("postToHost('open_external'"));
+        assert!(script.contains("anchor.target !== '_blank'"));
+        assert!(!script.contains("[data-tid=\"chat-item\"]"));
+        assert!(!script.contains("[data-testid^=\"chat\"]"));
         assert!(script.contains("stopPropagation"));
         assert!(script.contains("aria-label"));
         assert!(script.contains("getAll('ctx').includes('chat')"));
         assert!(script.contains("function hasNonEmptyQueryValue(url, key)"));
         assert!(script.contains("function isV2ChatQuery(url, path)"));
-        assert!(script.contains("hasNonEmptyQueryValue(url, 'chatId')"));
+        assert!(script.contains("chatIds.some(function (chatId)"));
+        assert!(script.contains("chatId.startsWith('19:meeting_')"));
+        assert!(script.contains("function hasInvalidChatId(url)"));
+        assert!(script.contains("decodeURIComponent(path)"));
+        assert!(script.contains("const chatIds = url.searchParams.getAll('chatId')"));
         assert!(script.contains("attributes: true"));
-        assert!(script.contains("attributeFilter: ['href', 'data-tid', 'role', 'class', 'style']"));
+        assert!(script.contains("'data-fui-tree-item-value'"));
+        assert!(script.contains("'data-item-type'"));
         assert!(script.contains("function canonicalLogicalRow(candidate)"));
         assert!(script.contains("candidate.matches('a') && candidate.matches(ROW_SELECTOR)"));
         assert!(script.contains("let outermostMatch = null"));
@@ -1034,6 +1159,53 @@ mod tests {
     fn rejects_meetup_join_routes_with_chat_query() {
         assert!(!is_teams_chat_url(
             "https://teams.microsoft.com/l/meetup-join/abc?users=a"
+        ));
+    }
+
+    #[test]
+    fn rejects_meeting_conversation_ids_on_v2_chat_route() {
+        assert!(!is_teams_chat_url(
+            "https://teams.microsoft.com/v2/?ctx=chat&chatId=19%3Ameeting_abc%40thread.v2"
+        ));
+    }
+
+    #[test]
+    fn rejects_non_conversation_chat_id() {
+        assert!(!is_teams_chat_url(
+            "https://teams.microsoft.com/v2/?ctx=chat&chatId=not-a-conversation"
+        ));
+    }
+
+    #[test]
+    fn rejects_invalid_chat_id_even_when_users_query_is_present() {
+        assert!(!is_teams_chat_url(
+            "https://teams.microsoft.com/v2/?users=a&ctx=chat&chatId=19%3Ameeting_abc%40thread.v2"
+        ));
+        assert!(!is_teams_chat_url(
+            "https://teams.microsoft.com/v2/?users=a&chatId=not-a-conversation"
+        ));
+        assert!(!is_teams_chat_url(
+            "https://teams.microsoft.com/v2/?users=a&chatId="
+        ));
+    }
+
+    #[test]
+    fn rejects_duplicate_chat_ids_when_any_value_is_invalid() {
+        assert!(!is_teams_chat_url(
+            "https://teams.microsoft.com/v2/?ctx=chat&chatId=19%3Aabc%40thread.v2&chatId=19%3Ameeting_bad%40thread.v2"
+        ));
+        assert!(!is_teams_chat_url(
+            "https://teams.microsoft.com/v2/?ctx=chat&chatId=bad&chatId=19%3Aabc%40thread.v2"
+        ));
+    }
+
+    #[test]
+    fn rejects_meeting_ids_on_direct_chat_routes() {
+        assert!(!is_teams_chat_url(
+            "https://teams.microsoft.com/l/chat/0/0?chatId=19%3Ameeting_abc%40thread.v2"
+        ));
+        assert!(!is_teams_chat_url(
+            "https://teams.microsoft.com/l/chat/19%3Ameeting_abc%40thread.v2/0"
         ));
     }
 
