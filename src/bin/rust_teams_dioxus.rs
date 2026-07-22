@@ -7,6 +7,7 @@ use rust_teams::app::AppConfig;
 use rust_teams::config::ConfigManager;
 use rust_teams::shell::bridge::{ShellCommand, ShellState, TeamsStatus};
 use rust_teams::shell::layout::ShellApp;
+use rust_teams::ui::chat_popout::{get_chat_popout_script, is_trusted_teams_url};
 
 fn main() {
     env_logger::init();
@@ -87,7 +88,7 @@ fn run_teams_window(url: &str) -> Result<(), Box<dyn std::error::Error>> {
     use dioxus_desktop::tao::event::{Event, StartCause, WindowEvent};
     use dioxus_desktop::tao::event_loop::{ControlFlow, EventLoopBuilder};
     use dioxus_desktop::tao::window::WindowBuilder;
-    use dioxus_desktop::wry::WebViewBuilder;
+    use dioxus_desktop::wry::{WebViewBuilder, NewWindowFeatures, NewWindowResponse};
 
     let event_loop = EventLoopBuilder::<()>::with_user_event().build();
     let window = WindowBuilder::new()
@@ -98,16 +99,28 @@ fn run_teams_window(url: &str) -> Result<(), Box<dyn std::error::Error>> {
     let webview = WebViewBuilder::new()
         .with_url(url)
         .with_devtools(true)
-        .with_initialization_script(INIT_SCRIPT)
-        .with_navigation_handler(|url| {
-            let lower = url.to_lowercase();
-            if lower.contains("teams.microsoft.com") || lower.contains("teams.live.com") {
+        .with_initialization_script(get_chat_popout_script())
+        .with_navigation_handler(move |nav_url| {
+            let lower = nav_url.to_lowercase();
+            if lower.contains("teams.microsoft.com")
+                || lower.contains("teams.live.com")
+                || lower.contains("login.microsoftonline.com")
+            {
                 true
             } else if lower.starts_with("http://") || lower.starts_with("https://") {
-                let _ = webbrowser::open(&url);
+                let _ = webbrowser::open(&nav_url);
                 false
             } else {
                 true
+            }
+        })
+        .with_new_window_req_handler(move |popup_url: String, _features: NewWindowFeatures| {
+            log::info!("New window: {}", popup_url);
+            if is_trusted_teams_url(&popup_url) {
+                NewWindowResponse::Allow
+            } else {
+                let _ = webbrowser::open(&popup_url);
+                NewWindowResponse::Deny
             }
         })
         .with_ipc_handler(|message| {
@@ -152,21 +165,3 @@ fn get_teams_url(config: &AppConfig) -> String {
 
     "https://teams.microsoft.com".to_string()
 }
-
-const INIT_SCRIPT: &str = r#"
-(function () {
-    'use strict';
-    const style = document.createElement('style');
-    style.textContent = `
-        * { animation-duration: 0s !important; transition-duration: 0s !important; }
-    `;
-    document.head.appendChild(style);
-
-    if (window.chrome && window.chrome.webview) {
-        window.chrome.webview.postMessage(JSON.stringify({
-            type: 'page_loaded',
-            data: { url: location.href }
-        }));
-    }
-})();
-"#;

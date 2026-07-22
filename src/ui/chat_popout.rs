@@ -777,14 +777,13 @@ pub fn get_chat_popout_script() -> String {
                 top: 50%;
                 right: 8px;
                 z-index: 2;
-                opacity: 0;
-                pointer-events: none;
+                opacity: 0.4;
+                pointer-events: auto;
                 transform: translateY(-50%);
             }
             .${ROW_CLASS}:hover > .${BUTTON_CLASS},
             .${ROW_CLASS}:focus-within > .${BUTTON_CLASS} {
                 opacity: 1;
-                pointer-events: auto;
             }
             .${BUTTON_CLASS}:focus-visible {
                 outline: 2px solid currentColor;
@@ -812,17 +811,27 @@ pub fn get_chat_popout_script() -> String {
         (document.head || document.documentElement).appendChild(style);
     }
 
+    function lookupRows() {
+        var rows = document.querySelectorAll(ROW_SELECTOR);
+        if (rows.length > 0) return rows;
+        rows = document.querySelectorAll('[role="treeitem"][data-testid="list-item"]');
+        if (rows.length > 0) { console.warn('[RTeams] Fallback: matched rows without data-item-type'); return rows; }
+        rows = document.querySelectorAll('[role="treeitem"]');
+        if (rows.length > 0) { console.warn('[RTeams] Fallback: broad treeitem match'); return rows; }
+        return rows;
+    }
+
     function decorateInitialRows() {
         const rows = new Set();
-        var candidates = document.querySelectorAll(ROW_SELECTOR);
-        dbg('Found', candidates.length, 'candidates with ROW_SELECTOR');
+        var candidates = lookupRows();
+        console.log('[RTeams] Found', candidates.length, 'row candidates');
         candidates.forEach(function (candidate) {
             const row = canonicalLogicalRow(candidate);
             if (row) {
                 rows.add(row);
             }
         });
-        dbg('Decorating', rows.size, 'initial rows');
+        console.log('[RTeams] Decorating', rows.size, 'initial rows');
         rows.forEach(decorateRow);
     }
 
