@@ -2,7 +2,7 @@
 
 use std::error::Error;
 
-use tao::dpi::LogicalSize;
+use tao::dpi::{LogicalPosition, LogicalSize};
 use tao::event_loop::EventLoopWindowTarget;
 use tao::window::WindowBuilder;
 use wry::WebViewBuilder;
@@ -46,5 +46,10 @@ impl ChatWindow {
 
     pub fn window_id(&self) -> tao::window::WindowId {
         self.window.id()
+    }
+
+    /// Set the window position (logical coordinates, before DPI scaling).
+    pub fn set_position(&self, x: f64, y: f64) {
+        self.window.set_outer_position(LogicalPosition::new(x, y));
     }
 }

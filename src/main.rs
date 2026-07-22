@@ -7,6 +7,7 @@ mod memory;
 mod ui;
 mod updater;
 
+use std::collections::HashMap;
 use std::error::Error;
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -373,7 +374,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let cm_for_save = config_manager;
     let mut config_for_save = config.clone();
 
-    let mut chat_window: Option<ChatWindow> = None;
+    let mut chat_windows: HashMap<String, ChatWindow> = HashMap::new();
 
     event_loop.run(move |event, event_loop, control_flow| {
         *control_flow = ControlFlow::Wait;
@@ -393,19 +394,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
             }
             Event::UserEvent(AppEvent::OpenChat(url)) => {
-                let needs_new_window = match chat_window.as_ref() {
-                    Some(window) => match window.navigate_and_focus(&url) {
-                        Ok(()) => false,
-                        Err(error) => {
-                            log::warn!("Failed to navigate the secondary chat window: {error}");
-                            true
-                        }
-                    },
+                let needs_new = match chat_windows.get(&url) {
+                    Some(window) => window.navigate_and_focus(&url).is_err(),
                     None => true,
                 };
 
-                if needs_new_window {
-                    chat_window = None;
+                if needs_new {
+                    chat_windows.remove(&url);
                     let proxy_for_secondary = proxy.clone();
                     let proxy_for_secondary_ipc = proxy.clone();
                     let builder = WebViewBuilder::new()
@@ -423,14 +418,21 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let builder = builder.with_environment(webview_environment.clone());
 
                     match ChatWindow::create(event_loop, builder) {
-                        Ok(window) => match window.navigate_and_focus(&url) {
-                            Ok(()) => chat_window = Some(window),
-                            Err(error) => {
-                                log::error!(
-                                    "Failed to navigate the new secondary chat window: {error}"
-                                );
+                        Ok(window) => {
+                            let offset = (chat_windows.len() as f64) * 35.0;
+                            window.set_position(100.0 + offset, 100.0 + offset);
+                            match window.navigate_and_focus(&url) {
+                                Ok(()) => {
+                                    log::info!("Opened chat window #{}", chat_windows.len() + 1);
+                                    chat_windows.insert(url, window);
+                                }
+                                Err(error) => {
+                                    log::error!(
+                                        "Failed to navigate the new secondary chat window: {error}"
+                                    );
+                                }
                             }
-                        },
+                        }
                         Err(error) => {
                             log::error!("Failed to create secondary chat window: {error}");
                         }
@@ -458,12 +460,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                         log::warn!("Failed to save config on close: {e}");
                     }
                     *control_flow = ControlFlow::Exit;
-                } else if chat_window
-                    .as_ref()
-                    .is_some_and(|window| window.window_id() == window_id)
-                {
-                    log::info!("Secondary chat window closed");
-                    chat_window = None;
+                } else {
+                    let prev = chat_windows.len();
+                    chat_windows.retain(|_, w| w.window_id() != window_id);
+                    if chat_windows.len() < prev {
+                        log::info!("Secondary chat window closed ({} remaining)", chat_windows.len());
+                    }
                 }
             }
             Event::WindowEvent {
