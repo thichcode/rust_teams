@@ -152,7 +152,10 @@ fn handle_new_window_request(url: String, proxy: &EventLoopProxy<AppEvent>) -> N
     }
 
     if looks_like_chat_request(&url) {
-        log::warn!("Denying chat-shaped popup rejected by the Teams chat classifier: {url}");
+        log::info!("Routing chat-shaped popup to secondary window (loose match): {url}");
+        if let Err(error) = proxy.send_event(AppEvent::OpenChat(url)) {
+            log::error!("Failed to queue secondary chat window: {error}");
+        }
         return NewWindowResponse::Deny;
     }
 

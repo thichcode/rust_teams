@@ -302,13 +302,16 @@ pub fn get_chat_popout_script() -> String {
         const itemType = row.getAttribute('data-item-type');
         const treeValue = row.getAttribute('data-fui-tree-item-value');
         if ((itemType === 'chat' || itemType === 'muted-chat') && treeValue) {
-            const chatId = treeValue.split('|').pop();
-            if (chatId && chatId.startsWith('19:') && !chatId.startsWith('19:meeting_')) {
-                const url = new URL('/v2/', location.origin);
-                url.searchParams.set('ctx', 'chat');
-                url.searchParams.set('chatId', chatId);
-                if (isChatUrl(url)) {
-                    return url.href;
+            const segments = treeValue.split('|');
+            for (let i = segments.length - 1; i >= 0; i--) {
+                const chatId = segments[i].trim();
+                if (chatId && chatId.startsWith('19:') && !chatId.startsWith('19:meeting_')) {
+                    const url = new URL('/v2/', location.origin);
+                    url.searchParams.set('ctx', 'chat');
+                    url.searchParams.set('chatId', chatId);
+                    if (isChatUrl(url)) {
+                        return url.href;
+                    }
                 }
             }
         }
@@ -335,6 +338,28 @@ pub fn get_chat_popout_script() -> String {
                 continue;
             }
         }
+
+        var dataAttrs = row.attributes;
+        for (var i = 0; i < dataAttrs.length; i++) {
+            var attr = dataAttrs[i];
+            if (!attr.value) continue;
+            var val = attr.value.trim();
+            if (val.indexOf('19:') !== -1 && val.indexOf('19:meeting_') === -1) {
+                var match = val.match(/19:[a-zA-Z0-9@.:_\-]+/);
+                if (match) {
+                    var chatId = match[0];
+                    try {
+                        const url = new URL('/v2/', location.origin);
+                        url.searchParams.set('ctx', 'chat');
+                        url.searchParams.set('chatId', chatId);
+                        if (isChatUrl(url)) {
+                            return url.href;
+                        }
+                    } catch (_error) {}
+                }
+            }
+        }
+
         return null;
     }
 
@@ -1046,9 +1071,11 @@ mod tests {
         assert!(script.contains("[data-item-type=\"chat\"]"));
         assert!(script.contains("[data-item-type=\"muted-chat\"]"));
         assert!(script.contains("data-fui-tree-item-value"));
-        assert!(script.contains("treeValue.split('|').pop()"));
+        assert!(script.contains("treeValue.split('|')"));
         assert!(script.contains("url.searchParams.set('chatId', chatId)"));
         assert!(script.contains("!chatId.startsWith('19:meeting_')"));
+        assert!(script.contains("var dataAttrs = row.attributes"));
+        assert!(script.contains("val.indexOf('19:')"));
         assert!(script.contains("window.chrome.webview.postMessage"));
         assert!(script.contains("postToHost('open_chat'"));
         assert!(script.contains("postToHost('open_external'"));
