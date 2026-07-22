@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone)]
 pub enum AppEvent {
     OpenChat(String),
+    OpenMeeting(String),
     OpenExternal(String),
 }
 

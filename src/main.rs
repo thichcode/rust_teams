@@ -27,7 +27,7 @@ use ui::AppEvent;
 use ui::auto_read::get_auto_read_script;
 use ui::badge::{parse_unread_count, play_notification_sound, update_taskbar_badge};
 use ui::browser::{BROWSER_PATH, open_in_new_window, open_url_smart};
-use ui::chat_popout::{get_chat_popout_script, is_teams_chat_url, is_trusted_teams_url};
+use ui::chat_popout::{get_chat_popout_script, is_teams_chat_url, is_teams_meeting_url, is_trusted_teams_url};
 use ui::chat_window::ChatWindow;
 use ui::console::auto_hide_console;
 use ui::performance::get_all_optimization_scripts;
@@ -140,14 +140,10 @@ fn handle_new_window_request(url: String, proxy: &EventLoopProxy<AppEvent>) -> N
         return NewWindowResponse::Deny;
     }
 
-    if lower.contains("/meet/")
-        || lower.contains("/call/")
-        || lower.contains("meetup-join")
-        || lower.contains("teams.live.com/meet")
-    {
-        log::info!("Routing meet/call URL with the existing browser behavior: {url}");
-        if let Err(error) = open_url_smart(&url, browser.as_deref()) {
-            log::warn!("Failed to open meet URL: {error}");
+    if is_teams_meeting_url(&url) {
+        log::info!("Opening Teams meeting in secondary window: {url}");
+        if let Err(error) = proxy.send_event(AppEvent::OpenMeeting(url)) {
+            log::error!("Failed to queue meeting window: {error}");
         }
         return NewWindowResponse::Deny;
     }
@@ -375,6 +371,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut config_for_save = config.clone();
 
     let mut chat_windows: HashMap<String, ChatWindow> = HashMap::new();
+    let mut meeting_windows: HashMap<String, ChatWindow> = HashMap::new();
 
     event_loop.run(move |event, event_loop, control_flow| {
         *control_flow = ControlFlow::Wait;
@@ -439,6 +436,55 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                 }
             }
+            Event::UserEvent(AppEvent::OpenMeeting(url)) => {
+                let needs_new = match meeting_windows.get(&url) {
+                    Some(window) => window.navigate_and_focus(&url).is_err(),
+                    None => true,
+                };
+
+                if needs_new {
+                    meeting_windows.remove(&url);
+                    let proxy_for_secondary = proxy.clone();
+                    let proxy_for_secondary_ipc = proxy.clone();
+                    let builder = WebViewBuilder::new()
+                        .with_initialization_script(chat_popout_js.clone())
+                        .with_navigation_handler(handle_navigation)
+                        .with_new_window_req_handler(
+                            move |url: String, _features: NewWindowFeatures| {
+                                handle_new_window_request(url, &proxy_for_secondary)
+                            },
+                        )
+                        .with_ipc_handler(move |message| {
+                            queue_webview_event(message.body(), &proxy_for_secondary_ipc);
+                        });
+                    #[cfg(target_os = "windows")]
+                    let builder = builder.with_environment(webview_environment.clone());
+
+                    match ChatWindow::create(event_loop, builder) {
+                        Ok(window) => {
+                            let offset = (meeting_windows.len() as f64) * 35.0;
+                            window.set_position(200.0 + offset, 200.0 + offset);
+                            match window.navigate_and_focus(&url) {
+                                Ok(()) => {
+                                    log::info!(
+                                        "Opened meeting window #{}",
+                                        meeting_windows.len() + 1
+                                    );
+                                    meeting_windows.insert(url, window);
+                                }
+                                Err(error) => {
+                                    log::error!(
+                                        "Failed to navigate the new meeting window: {error}"
+                                    );
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            log::error!("Failed to create meeting window: {error}");
+                        }
+                    }
+                }
+            }
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 window_id,
@@ -466,6 +512,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     if chat_windows.len() < prev {
                         log::info!("Secondary chat window closed ({} remaining)", chat_windows.len());
                     }
+                    meeting_windows.retain(|_, w| w.window_id() != window_id);
                 }
             }
             Event::WindowEvent {

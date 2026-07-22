@@ -74,6 +74,36 @@ pub fn is_teams_chat_url(raw_url: &str) -> bool {
     has_users || (has_chat_context && has_chat_id)
 }
 
+pub fn is_teams_meeting_url(raw_url: &str) -> bool {
+    let Some(url) = trusted_teams_url(raw_url) else {
+        return false;
+    };
+
+    let path = url.path().to_ascii_lowercase();
+    // Path-segment meeting routes: /meet/, /meeting/, /call/, /meetup/, /meetup-join/
+    if path.split('/').any(|seg| {
+        matches!(seg, "meet" | "meeting" | "call" | "meetup" | "meetup-join")
+    }) {
+        return true;
+    }
+    // teams.live.com/meet/
+    if url.host_str() == Some("teams.live.com") && path.starts_with("/meet/") {
+        return true;
+    }
+    // Meeting conversation IDs: 19:meeting_* or 19%3Ameeting_* in path
+    if path.contains("19:meeting_") || path.contains("19%3ameeting_") {
+        return true;
+    }
+    // Query string meeting IDs (e.g., v2?chatId=19%3Ameeting_*)
+    for (_, value) in url.query_pairs() {
+        if value.contains("19:meeting_") || value.contains("19%3ameeting_") {
+            return true;
+        }
+    }
+
+    false
+}
+
 pub fn get_chat_popout_script() -> String {
     r#"
 (function () {
@@ -1068,7 +1098,7 @@ pub fn get_chat_popout_script() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{get_chat_popout_script, is_teams_chat_url, is_trusted_teams_url};
+    use super::{get_chat_popout_script, is_teams_chat_url, is_teams_meeting_url, is_trusted_teams_url};
 
     #[test]
     fn injection_script_contains_popup_and_deduplication_contracts() {
@@ -1277,5 +1307,69 @@ mod tests {
         ));
         assert!(!is_trusted_teams_url("https://chat.teams.live.com/"));
         assert!(!is_trusted_teams_url("http://teams.microsoft.com/"));
+    }
+
+    #[test]
+    fn accepts_meeting_urls() {
+        assert!(is_teams_meeting_url(
+            "https://teams.microsoft.com/meet/123456"
+        ));
+        assert!(is_teams_meeting_url(
+            "https://teams.microsoft.com/meeting/abc"
+        ));
+        assert!(is_teams_meeting_url(
+            "https://teams.microsoft.com/call/abc123"
+        ));
+        assert!(is_teams_meeting_url(
+            "https://teams.microsoft.com/l/meetup/xyz"
+        ));
+        assert!(is_teams_meeting_url(
+            "https://teams.microsoft.com/l/meetup-join/19%3Ameeting_abc%40thread.v2"
+        ));
+        assert!(is_teams_meeting_url(
+            "https://teams.live.com/meet/abcdef"
+        ));
+        assert!(is_teams_meeting_url(
+            "https://teams.microsoft.com/v2/?ctx=chat&chatId=19%3Ameeting_abc%40thread.v2"
+        ));
+        assert!(is_teams_meeting_url(
+            "https://teams.microsoft.com/l/chat/19%3Ameeting_abc%40thread.v2/0"
+        ));
+        assert!(is_teams_meeting_url(
+            "https://teams.microsoft.com/v2/?chatId=19%3Ameeting_abc%40thread.v2"
+        ));
+        assert!(is_teams_meeting_url(
+            "https://chat.teams.microsoft.com/meet/123"
+        ));
+        assert!(is_teams_meeting_url(
+            "https://teams.microsoft.com/meetup/join/abc"
+        ));
+    }
+
+    #[test]
+    fn rejects_non_meeting_urls() {
+        assert!(!is_teams_meeting_url(
+            "https://teams.microsoft.com/l/chat/0/0?users=alice"
+        ));
+        assert!(!is_teams_meeting_url(
+            "https://teams.microsoft.com/l/channel/19%3Aabc/general"
+        ));
+        assert!(!is_teams_meeting_url(
+            "https://teams.microsoft.com/l/person/123"
+        ));
+        assert!(!is_teams_meeting_url(
+            "https://teams.microsoft.com/v2/?ctx=chat&chatId=19%3Aabc%40thread.v2"
+        ));
+        assert!(!is_teams_meeting_url(
+            "https://teams.microsoft.com/v2/?users=alice"
+        ));
+        assert!(!is_teams_meeting_url("https://evil.example/meet/123"));
+        assert!(!is_teams_meeting_url("http://teams.microsoft.com/meet/123"));
+        assert!(!is_teams_meeting_url(
+            "https://teams.microsoft.com.evil.example/meet/123"
+        ));
+        assert!(!is_teams_meeting_url("https://teams.microsoft.com/"));
+        assert!(!is_teams_meeting_url("not a url"));
+        assert!(!is_teams_meeting_url("javascript:alert(1)"));
     }
 }
