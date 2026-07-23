@@ -342,8 +342,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         });
 
     if config.memory_optimization.enabled {
+        #[cfg(target_os = "windows")]
+        {
+            webview_builder = webview_builder
+                .with_default_context_menus(false);
+        }
         webview_builder = webview_builder
-            .with_default_context_menus(false)
             .with_devtools(true);
     }
 
