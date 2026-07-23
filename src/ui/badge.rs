@@ -22,6 +22,11 @@ pub fn play_notification_sound() {
 
 /// Update taskbar badge with unread count using Windows API
 pub fn update_taskbar_badge(hwnd: isize, count: u32) {
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (hwnd, count);
+    }
+
     #[cfg(target_os = "windows")]
     unsafe {
         use winapi::um::winuser::{FlashWindow, SetWindowTextW};

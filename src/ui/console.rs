@@ -3,6 +3,11 @@
 /// Hide the console window after a delay
 /// This allows seeing startup messages then auto-hiding
 pub fn auto_hide_console(delay_ms: u64) {
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = delay_ms;
+    }
+
     #[cfg(target_os = "windows")]
     {
         std::thread::spawn(move || {

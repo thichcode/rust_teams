@@ -451,6 +451,7 @@ fn restart_app(exe_path: &PathBuf) -> Result<(), String> {
 
     #[cfg(not(target_os = "windows"))]
     {
+        let _ = exe_path;
         println!("Please restart the app manually.");
         std::process::exit(0);
     }
