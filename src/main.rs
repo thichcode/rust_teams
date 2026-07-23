@@ -19,7 +19,9 @@ use tao::platform::windows::WindowExtWindows;
 use tao::window::{Icon, WindowBuilder};
 #[cfg(target_os = "windows")]
 use wry::WebViewExtWindows;
-use wry::{NewWindowFeatures, NewWindowResponse, WebViewBuilder, WebViewBuilderExtWindows};
+use wry::{NewWindowFeatures, NewWindowResponse, WebViewBuilder};
+#[cfg(target_os = "windows")]
+use wry::WebViewBuilderExtWindows;
 
 use app::AppConfig;
 use config::ConfigManager;
@@ -303,8 +305,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let proxy_for_popouts = proxy.clone();
     let proxy_for_ipc = proxy.clone();
     let mut webview_builder = WebViewBuilder::new()
-        .with_url(&teams_url)
-        .with_additional_browser_args(&browser_args)
+        .with_url(&teams_url);
+
+    #[cfg(target_os = "windows")]
+    {
+        webview_builder = webview_builder.with_additional_browser_args(&browser_args);
+    }
+
+    webview_builder = webview_builder
         .with_initialization_script(&auto_read_js)
         .with_initialization_script(&perf_js)
         .with_initialization_script(&chat_popout_js)
