@@ -3,18 +3,12 @@ members = ["rteams-meeting-assistant"]
 
 [package]
 name = "rust_teams"
-version = "0.9.55"
+version = "0.9.56"
 edition = "2024"  # Latest Rust edition (2024)
 
 [features]
 default = ["memory-optimized"]
 memory-optimized = []
-dioxus-shell = ["dioxus", "dioxus-desktop", "webbrowser"]
-
-[[bin]]
-name = "rust-teams-dioxus"
-path = "src/bin/rust_teams_dioxus.rs"
-required-features = ["dioxus-shell"]
 
 [dependencies]
 # Window management (tao is a fork of winit used by wry)
@@ -55,9 +49,6 @@ sha2 = "0.10"
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3", features = ["winuser", "shellapi", "winbase", "processthreadsapi", "wincon"] }
 
-# Dioxus shell UI (optional, build with --features dioxus-shell)
-dioxus = { version = "0.7", features = ["desktop"], optional = true }
-dioxus-desktop = { version = "0.7", optional = true }
-webbrowser = { version = "1.0", optional = true }
+
 
 

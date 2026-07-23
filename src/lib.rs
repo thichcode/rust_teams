@@ -1,9 +1,6 @@
 pub mod app;
 pub mod config;
 pub mod memory;
-#[cfg(feature = "dioxus-shell")]
-pub mod native;
-#[cfg(feature = "dioxus-shell")]
-pub mod shell;
+
 pub mod ui;
 pub mod updater;

@@ -74,17 +74,11 @@ jobs:
       - name: Build (release)
         run: cargo build --release
 
-      - name: Build (dioxus-shell)
-        run: cargo build --features dioxus-shell --bin rust-teams-dioxus --release
-
       - name: Prepare release package
         shell: pwsh
         run: |
-          # Copy main exe with clean name
           Copy-Item target/release/rust_teams.exe rust_teams-windows-x64.exe
-          # Copy dioxus exe
-          Copy-Item target/release/rust-teams-dioxus.exe rust-teams-dioxus-windows-x64.exe
-          Get-Item rust_teams-windows-x64.exe, rust-teams-dioxus-windows-x64.exe | Select-Object Name, Length
+          Get-Item rust_teams-windows-x64.exe | Select-Object Name, Length
 
       - name: Sign executables
         if: env.CODE_SIGNING_CERT_BASE64 != ''
@@ -93,7 +87,6 @@ jobs:
           CODE_SIGNING_CERT_BASE64: ${{ secrets.CODE_SIGNING_CERT_BASE64 }}
           CODE_SIGNING_CERT_PASSWORD: ${{ secrets.CODE_SIGNING_CERT_PASSWORD }}
         run: |
-          # Decode certificate
           $certBytes = [Convert]::FromBase64String($env:CODE_SIGNING_CERT_BASE64)
           $certPath = "$env:RUNNER_TEMP\certificate.pfx"
           [System.IO.File]::WriteAllBytes($certPath, $certBytes)
@@ -101,37 +94,25 @@ jobs:
           $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | 
             Select-Object -First 1 -ExpandProperty FullName
           
-          $exeFiles = @("rust_teams-windows-x64.exe", "rust-teams-dioxus-windows-x64.exe")
-          
           if ($signtool) {
-            foreach ($exe in $exeFiles) {
-              & $signtool sign `
-                /f $certPath `
-                /p $env:CODE_SIGNING_CERT_PASSWORD `
-                /tr http://timestamp.digicert.com `
-                /td sha256 `
-                /d "R Teams" `
-                /du "https://github.com/thichcode/rust_teams" `
-                $exe
-              
-              if ($LASTEXITCODE -eq 0) {
-                Write-Host "✅ Signed $exe" -ForegroundColor Green
-              } else {
-                Write-Warning "Signing failed for $exe"
-              }
-            }
+            & $signtool sign `
+              /f $certPath `
+              /p $env:CODE_SIGNING_CERT_PASSWORD `
+              /tr http://timestamp.digicert.com `
+              /td sha256 `
+              /d "R Teams" `
+              /du "https://github.com/thichcode/rust_teams" `
+              rust_teams-windows-x64.exe
           } else {
             Write-Warning "signtool not found, skipping signing"
           }
           
-          # Clean up certificate
           Remove-Item $certPath -Force -ErrorAction SilentlyContinue
 
-      - name: Create zips
+      - name: Create zip
         shell: pwsh
         run: |
           Compress-Archive -Path rust_teams-windows-x64.exe -DestinationPath rust_teams-windows-x64.zip
-          Compress-Archive -Path rust-teams-dioxus-windows-x64.exe -DestinationPath rust-teams-dioxus-windows-x64.zip
           Get-Item *.exe, *.zip | Select-Object Name, Length
 
       - name: Generate checksums
@@ -139,9 +120,7 @@ jobs:
         run: |
           $files = @(
             @{ Name = "rust_teams-windows-x64.exe"; Hash = (Get-FileHash rust_teams-windows-x64.exe -Algorithm SHA256).Hash.ToLower() },
-            @{ Name = "rust_teams-windows-x64.zip"; Hash = (Get-FileHash rust_teams-windows-x64.zip -Algorithm SHA256).Hash.ToLower() },
-            @{ Name = "rust-teams-dioxus-windows-x64.exe"; Hash = (Get-FileHash rust-teams-dioxus-windows-x64.exe -Algorithm SHA256).Hash.ToLower() },
-            @{ Name = "rust-teams-dioxus-windows-x64.zip"; Hash = (Get-FileHash rust-teams-dioxus-windows-x64.zip -Algorithm SHA256).Hash.ToLower() }
+            @{ Name = "rust_teams-windows-x64.zip"; Hash = (Get-FileHash rust_teams-windows-x64.zip -Algorithm SHA256).Hash.ToLower() }
           )
           foreach ($f in $files) {
             "$($f.Hash)  $($f.Name)" | Out-File -Encoding ascii -NoNewline:$false "$($f.Name).sha256"
@@ -160,20 +139,6 @@ jobs:
         with:
           name: rust_teams-windows-x64.zip
           path: rust_teams-windows-x64.zip
-          retention-days: 90
-
-      - name: Upload dioxus exe artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: rust-teams-dioxus-windows-x64.exe
-          path: rust-teams-dioxus-windows-x64.exe
-          retention-days: 90
-
-      - name: Upload dioxus zip artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: rust-teams-dioxus-windows-x64.zip
-          path: rust-teams-dioxus-windows-x64.zip
           retention-days: 90
 
       - name: Upload checksum artifacts
@@ -285,18 +250,6 @@ jobs:
           name: rust_teams-windows-x64.zip
           path: release
 
-      - name: Download dioxus exe artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: rust-teams-dioxus-windows-x64.exe
-          path: release
-
-      - name: Download dioxus zip artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: rust-teams-dioxus-windows-x64.zip
-          path: release
-
       - name: Download checksum artifacts
         uses: actions/download-artifact@v4
         with:
@@ -346,9 +299,6 @@ jobs:
           
           [rust_teams-windows-x64.zip](${BASE_URL}/rust_teams-windows-x64.zip) - Compressed archive (~2MB)
           
-          [rust-teams-dioxus-windows-x64.exe](${BASE_URL}/rust-teams-dioxus-windows-x64.exe) - Dioxus shell (experimental, requires Teams WebView)
-          
-          [rust-teams-dioxus-windows-x64.zip](${BASE_URL}/rust-teams-dioxus-windows-x64.zip) - Dioxus shell compressed
            
           [rust_teams-linux-x64](${BASE_URL}/rust_teams-linux-x64) - Linux binary (requires WebKitGTK 4.1)
            
@@ -360,9 +310,6 @@ jobs:
           
           [rust_teams-windows-x64.zip.sha256](${BASE_URL}/rust_teams-windows-x64.zip.sha256)
           
-          [rust-teams-dioxus-windows-x64.exe.sha256](${BASE_URL}/rust-teams-dioxus-windows-x64.exe.sha256)
-          
-          [rust-teams-dioxus-windows-x64.zip.sha256](${BASE_URL}/rust-teams-dioxus-windows-x64.zip.sha256)
            
           [rust_teams-linux-x64.sha256](${BASE_URL}/rust_teams-linux-x64.sha256)
            
@@ -415,10 +362,6 @@ jobs:
             release/rust_teams-windows-x64.zip
             release/rust_teams-windows-x64.exe.sha256
             release/rust_teams-windows-x64.zip.sha256
-            release/rust-teams-dioxus-windows-x64.exe
-            release/rust-teams-dioxus-windows-x64.zip
-            release/rust-teams-dioxus-windows-x64.exe.sha256
-            release/rust-teams-dioxus-windows-x64.zip.sha256
             release/rust_teams-linux-x64
             release/rust_teams-linux-x64.tar.gz
             release/rust_teams-linux-x64.sha256
