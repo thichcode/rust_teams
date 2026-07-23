@@ -382,6 +382,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // Capture config + manager for save-on-close
     let cm_for_save = config_manager;
+    #[cfg_attr(not(target_os = "windows"), allow(unused_mut))]
     let mut config_for_save = config.clone();
 
     let mut chat_windows: HashMap<String, ChatWindow> = HashMap::new();
