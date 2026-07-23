@@ -3,7 +3,7 @@ members = ["rteams-meeting-assistant"]
 
 [package]
 name = "rust_teams"
-version = "0.9.54"
+version = "0.9.55"
 edition = "2024"  # Latest Rust edition (2024)
 
 [features]
@@ -21,7 +21,7 @@ required-features = ["dioxus-shell"]
 tao = { version = "0.35", features = ["serde"] }
 
 # WebView rendering (uses WebView2 on Windows)
-wry = { version = "0.55", features = ["devtools"], default-features = false }
+wry = { version = "0.55", features = ["devtools"] }
 
 # Config & Serialization
 serde = { version = "1.0", features = ["derive"] }
