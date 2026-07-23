@@ -11,7 +11,10 @@ use rust_teams::ui::chat_popout::{get_chat_popout_script, is_trusted_teams_url};
 
 fn main() {
     env_logger::init();
-    println!("🦀 R Teams Dioxus Shell v{}", rust_teams::updater::current_version());
+    println!(
+        "🦀 R Teams Dioxus Shell v{}",
+        rust_teams::updater::current_version()
+    );
     dioxus::launch(app);
 }
 
@@ -26,7 +29,11 @@ fn app() -> Element {
     };
 
     let teams_url = get_teams_url(&config);
-    let memory_label = if config.memory_optimization.enabled { "ON" } else { "OFF" };
+    let memory_label = if config.memory_optimization.enabled {
+        "ON"
+    } else {
+        "OFF"
+    };
     let profile_name = config
         .profiles
         .iter()
@@ -88,7 +95,7 @@ fn run_teams_window(url: &str) -> Result<(), Box<dyn std::error::Error>> {
     use dioxus_desktop::tao::event::{Event, StartCause, WindowEvent};
     use dioxus_desktop::tao::event_loop::{ControlFlow, EventLoopBuilder};
     use dioxus_desktop::tao::window::WindowBuilder;
-    use dioxus_desktop::wry::{WebViewBuilder, NewWindowFeatures, NewWindowResponse};
+    use dioxus_desktop::wry::{NewWindowFeatures, NewWindowResponse, WebViewBuilder};
 
     let event_loop = EventLoopBuilder::<()>::with_user_event().build();
     let window = WindowBuilder::new()

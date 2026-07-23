@@ -27,7 +27,9 @@ use ui::AppEvent;
 use ui::auto_read::get_auto_read_script;
 use ui::badge::{parse_unread_count, play_notification_sound, update_taskbar_badge};
 use ui::browser::{BROWSER_PATH, open_in_new_window, open_url_smart};
-use ui::chat_popout::{get_chat_popout_script, is_teams_chat_url, is_teams_meeting_url, is_trusted_teams_url};
+use ui::chat_popout::{
+    get_chat_popout_script, is_teams_chat_url, is_teams_meeting_url, is_trusted_teams_url,
+};
 use ui::chat_window::ChatWindow;
 use ui::console::auto_hide_console;
 use ui::performance::get_all_optimization_scripts;
@@ -510,7 +512,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let prev = chat_windows.len();
                     chat_windows.retain(|_, w| w.window_id() != window_id);
                     if chat_windows.len() < prev {
-                        log::info!("Secondary chat window closed ({} remaining)", chat_windows.len());
+                        log::info!(
+                            "Secondary chat window closed ({} remaining)",
+                            chat_windows.len()
+                        );
                     }
                     meeting_windows.retain(|_, w| w.window_id() != window_id);
                 }

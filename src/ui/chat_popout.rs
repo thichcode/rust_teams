@@ -81,9 +81,10 @@ pub fn is_teams_meeting_url(raw_url: &str) -> bool {
 
     let path = url.path().to_ascii_lowercase();
     // Path-segment meeting routes: /meet/, /meeting/, /call/, /meetup/, /meetup-join/
-    if path.split('/').any(|seg| {
-        matches!(seg, "meet" | "meeting" | "call" | "meetup" | "meetup-join")
-    }) {
+    if path
+        .split('/')
+        .any(|seg| matches!(seg, "meet" | "meeting" | "call" | "meetup" | "meetup-join"))
+    {
         return true;
     }
     // teams.live.com/meet/
@@ -1098,7 +1099,9 @@ pub fn get_chat_popout_script() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{get_chat_popout_script, is_teams_chat_url, is_teams_meeting_url, is_trusted_teams_url};
+    use super::{
+        get_chat_popout_script, is_teams_chat_url, is_teams_meeting_url, is_trusted_teams_url,
+    };
 
     #[test]
     fn injection_script_contains_popup_and_deduplication_contracts() {
@@ -1326,9 +1329,7 @@ mod tests {
         assert!(is_teams_meeting_url(
             "https://teams.microsoft.com/l/meetup-join/19%3Ameeting_abc%40thread.v2"
         ));
-        assert!(is_teams_meeting_url(
-            "https://teams.live.com/meet/abcdef"
-        ));
+        assert!(is_teams_meeting_url("https://teams.live.com/meet/abcdef"));
         assert!(is_teams_meeting_url(
             "https://teams.microsoft.com/v2/?ctx=chat&chatId=19%3Ameeting_abc%40thread.v2"
         ));
