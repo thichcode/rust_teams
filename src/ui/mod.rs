@@ -11,6 +11,7 @@ pub mod performance;
 use serde::{Deserialize, Serialize};
 
 /// Custom events from WebView callbacks to the main event loop.
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone)]
 pub enum AppEvent {
     OpenChat(String),
