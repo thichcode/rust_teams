@@ -213,30 +213,30 @@ jobs:
           cp linux/rust_teams.desktop "${PKG_DIR}/usr/share/applications/rust_teams.desktop"
           cp src/assets/icon_256.png "${PKG_DIR}/usr/share/icons/hicolor/256x256/apps/rust_teams.png"
 
-          cat > "${PKG_DIR}/DEBIAN/control" << EOF
-Package: rust-teams
-Version: ${VERSION}
-Section: net
-Priority: optional
-Architecture: amd64
-Depends: libgtk-3-0 (>= 3.24), libwebkit2gtk-4.1-0 (>= 2.40), libjavascriptcoregtk-4.1-0 (>= 2.40), libappindicator3-1, librsvg2-2 (>= 2.52), libsoup-3.0-0 (>= 3.0), libxkbcommon0, libfontconfig1
-Maintainer: thichcode <thichcode@users.noreply.github.com>
-Description: Lightweight Microsoft Teams desktop client
- Unofficial Microsoft Teams client built with Rust and WebView.
- Features: memory optimization, auto-update, multi-profile,
- badge notifications, meeting popout, realtime translate.
-Homepage: https://github.com/thichcode/rust_teams
-EOF
+          {
+            echo "Package: rust-teams"
+            echo "Version: ${VERSION}"
+            echo "Section: net"
+            echo "Priority: optional"
+            echo "Architecture: amd64"
+            echo "Depends: libgtk-3-0 (>= 3.24), libwebkit2gtk-4.1-0 (>= 2.40), libjavascriptcoregtk-4.1-0 (>= 2.40), libappindicator3-1, librsvg2-2 (>= 2.52), libsoup-3.0-0 (>= 3.0), libxkbcommon0, libfontconfig1"
+            echo "Maintainer: thichcode <thichcode@users.noreply.github.com>"
+            echo "Description: Lightweight Microsoft Teams desktop client"
+            echo " Unofficial Microsoft Teams client built with Rust and WebView."
+            echo " Features: memory optimization, auto-update, multi-profile,"
+            echo " badge notifications, meeting popout, realtime translate."
+            echo "Homepage: https://github.com/thichcode/rust_teams"
+          } > "${PKG_DIR}/DEBIAN/control"
 
           # Changelog
           date=$(date -u +"%a, %d %b %Y %H:%M:%S %z")
-          cat > "${PKG_DIR}/usr/share/doc/rust_teams/changelog" << EOF
-rust-teams (${VERSION}) unstable; urgency=medium
-
-  * Linux build fixes and .deb packaging.
-
- -- thichcode <thichcode@users.noreply.github.com>  ${date}
-EOF
+          {
+            echo "rust-teams (${VERSION}) unstable; urgency=medium"
+            echo ""
+            echo "  * Linux build fixes and .deb packaging."
+            echo ""
+            echo " -- thichcode <thichcode@users.noreply.github.com>  ${date}"
+          } > "${PKG_DIR}/usr/share/doc/rust_teams/changelog"
           gzip -9 -n "${PKG_DIR}/usr/share/doc/rust_teams/changelog"
 
           dpkg-deb --build --root-owner-group "${PKG_DIR}"
