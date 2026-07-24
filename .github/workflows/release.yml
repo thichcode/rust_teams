@@ -199,10 +199,55 @@ jobs:
           tar czf rust_teams-linux-x64.tar.gz rust_teams-linux-x64
           ls -la rust_teams-linux-x64*
 
+      - name: Build .deb package
+        run: |
+          VERSION=$(grep '^version =' Cargo.toml | sed 's/version = "\(.*\)"/\1/' | head -1)
+          PKG_DIR="rust_teams_${VERSION}_amd64"
+          mkdir -p "${PKG_DIR}/DEBIAN"
+          mkdir -p "${PKG_DIR}/usr/bin"
+          mkdir -p "${PKG_DIR}/usr/share/applications"
+          mkdir -p "${PKG_DIR}/usr/share/icons/hicolor/256x256/apps"
+          mkdir -p "${PKG_DIR}/usr/share/doc/rust_teams"
+
+          cp target/release/rust_teams "${PKG_DIR}/usr/bin/rust_teams"
+          cp linux/rust_teams.desktop "${PKG_DIR}/usr/share/applications/rust_teams.desktop"
+          cp src/assets/icon_256.png "${PKG_DIR}/usr/share/icons/hicolor/256x256/apps/rust_teams.png"
+
+          cat > "${PKG_DIR}/DEBIAN/control" << EOF
+Package: rust-teams
+Version: ${VERSION}
+Section: net
+Priority: optional
+Architecture: amd64
+Depends: libgtk-3-0 (>= 3.24), libwebkit2gtk-4.1-0 (>= 2.40), libjavascriptcoregtk-4.1-0 (>= 2.40), libappindicator3-1, librsvg2-2 (>= 2.52), libsoup-3.0-0 (>= 3.0), libxkbcommon0, libfontconfig1
+Maintainer: thichcode <thichcode@users.noreply.github.com>
+Description: Lightweight Microsoft Teams desktop client
+ Unofficial Microsoft Teams client built with Rust and WebView.
+ Features: memory optimization, auto-update, multi-profile,
+ badge notifications, meeting popout, realtime translate.
+Homepage: https://github.com/thichcode/rust_teams
+EOF
+
+          # Changelog
+          date=$(date -u +"%a, %d %b %Y %H:%M:%S %z")
+          cat > "${PKG_DIR}/usr/share/doc/rust_teams/changelog" << EOF
+rust-teams (${VERSION}) unstable; urgency=medium
+
+  * Linux build fixes and .deb packaging.
+
+ -- thichcode <thichcode@users.noreply.github.com>  ${date}
+EOF
+          gzip -9 -n "${PKG_DIR}/usr/share/doc/rust_teams/changelog"
+
+          dpkg-deb --build --root-owner-group "${PKG_DIR}"
+          mv "${PKG_DIR}.deb" "rust-teams_${VERSION}_amd64.deb"
+          ls -la "rust-teams_${VERSION}_amd64.deb"
+
       - name: Generate checksums
         run: |
           sha256sum rust_teams-linux-x64 > rust_teams-linux-x64.sha256
           sha256sum rust_teams-linux-x64.tar.gz > rust_teams-linux-x64.tar.gz.sha256
+          sha256sum rust-teams_*.deb > rust-teams-linux-x64.deb.sha256
           cat *.sha256
 
       - name: Upload binary artifact
@@ -225,6 +270,13 @@ jobs:
           name: checksums-linux
           path: |
             *.sha256
+          retention-days: 90
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-teams-linux-x64.deb
+          path: rust-teams_*.deb
           retention-days: 90
 
   release:
@@ -274,6 +326,12 @@ jobs:
           name: checksums-linux
           path: release
 
+      - name: Download .deb artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: rust-teams-linux-x64.deb
+          path: release
+
       - name: List release assets
         shell: bash
         run: ls -la release/
@@ -299,23 +357,27 @@ jobs:
           
           [rust_teams-windows-x64.zip](${BASE_URL}/rust_teams-windows-x64.zip) - Compressed archive (~2MB)
           
-           
-          [rust_teams-linux-x64](${BASE_URL}/rust_teams-linux-x64) - Linux binary (requires WebKitGTK 4.1)
-           
-          [rust_teams-linux-x64.tar.gz](${BASE_URL}/rust_teams-linux-x64.tar.gz) - Linux compressed archive
-           
-          ### Verify Download (SHA256)
+            
+            [rust_teams-linux-x64](${BASE_URL}/rust_teams-linux-x64) - Linux binary (requires WebKitGTK 4.1)
+            
+            [rust_teams-linux-x64.tar.gz](${BASE_URL}/rust_teams-linux-x64.tar.gz) - Linux compressed archive
+            
+            [rust-teams_${VERSION}_amd64.deb](${BASE_URL}/rust-teams_${VERSION}_amd64.deb) - Debian/Ubuntu package (.deb)
+            
+           ### Verify Download (SHA256)
           
           [rust_teams-windows-x64.exe.sha256](${BASE_URL}/rust_teams-windows-x64.exe.sha256)
           
           [rust_teams-windows-x64.zip.sha256](${BASE_URL}/rust_teams-windows-x64.zip.sha256)
           
-           
-          [rust_teams-linux-x64.sha256](${BASE_URL}/rust_teams-linux-x64.sha256)
-           
-          [rust_teams-linux-x64.tar.gz.sha256](${BASE_URL}/rust_teams-linux-x64.tar.gz.sha256)
-           
-          The in-app auto-updater verifies this checksum before installing an update.
+            
+            [rust_teams-linux-x64.sha256](${BASE_URL}/rust_teams-linux-x64.sha256)
+            
+            [rust_teams-linux-x64.tar.gz.sha256](${BASE_URL}/rust_teams-linux-x64.tar.gz.sha256)
+            
+            [rust-teams-linux-x64.deb.sha256](${BASE_URL}/rust-teams-linux-x64.deb.sha256)
+            
+           The in-app auto-updater verifies this checksum before installing an update.
           
           ### Features
           
@@ -366,6 +428,8 @@ jobs:
             release/rust_teams-linux-x64.tar.gz
             release/rust_teams-linux-x64.sha256
             release/rust_teams-linux-x64.tar.gz.sha256
+            release/rust-teams_*.deb
+            release/rust-teams-linux-x64.deb.sha256
           draft: false
           prerelease: false
         env:
