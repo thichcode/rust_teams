@@ -42,9 +42,32 @@
 
 ## 🚀 Quick Start
 
-### Download
+### Windows
 
-Download the latest release from [Releases](https://github.com/thichcode/rust_teams/releases) or build from source.
+Download the latest `.exe` or `.zip` from [Releases](https://github.com/thichcode/rust_teams/releases).
+
+### Linux (Ubuntu 22.04+)
+
+**Option 1 — Install via .deb (recommended):**
+
+```bash
+# Download the latest .deb from Releases
+wget https://github.com/thichcode/rust_teams/releases/download/v0.9.59/rust-teams_0.9.59_amd64.deb
+
+# Install
+sudo dpkg -i rust-teams_0.9.59_amd64.deb
+sudo apt-get install -f   # install missing dependencies if any
+```
+
+After installation, launch from app menu or run `rust_teams`.
+
+**Option 2 — Binary archive:**
+
+```bash
+wget https://github.com/thichcode/rust_teams/releases/download/v0.9.59/rust_teams-linux-x64.tar.gz
+tar xzf rust_teams-linux-x64.tar.gz
+./rust_teams-linux-x64
+```
 
 ### Build from Source
 
@@ -63,6 +86,7 @@ cargo run --release
 ### Requirements
 
 - **Windows 10/11** with WebView2 Runtime (pre-installed on Windows 11)
+- **Linux (Ubuntu 22.04+)** with WebKitGTK 4.1 (`libwebkit2gtk-4.1-dev`)
 - **Rust 1.96+** (for building from source)
 
 ---
@@ -192,6 +216,8 @@ rust_teams/
 │   └── workflows/
 │       ├── ci.yml          # CI pipeline
 │       └── build.yml       # Build & Release
+├── linux/
+│   └── rust_teams.desktop  # Linux desktop entry (.deb)
 ├── config/
 │   ├── default_config.json # Default configuration
 │   └── blocked_domains.json # Ad/tracker blocklist
