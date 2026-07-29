@@ -13,6 +13,8 @@ fn trusted_teams_url(raw_url: &str) -> Option<Url> {
     let host = url.host_str()?;
     if host != "teams.microsoft.com"
         && !host.ends_with(".teams.microsoft.com")
+        && host != "teams.office.com"
+        && !host.ends_with(".teams.office.com")
         && host != "teams.live.com"
     {
         return None;

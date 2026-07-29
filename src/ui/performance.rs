@@ -12,6 +12,7 @@ pub fn get_performance_script() -> String {
         // ========== RESOURCE HINTS ==========
         function addResourceHints() {
             const origins = [
+                'https://teams.office.com',
                 'https://teams.microsoft.com',
                 'https://login.microsoftonline.com',
                 'https://graph.microsoft.com',

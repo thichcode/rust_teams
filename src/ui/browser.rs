@@ -125,6 +125,8 @@ fn is_teams_web_url(raw_url: &str) -> bool {
 
     host == "teams.microsoft.com"
         || host.ends_with(".teams.microsoft.com")
+        || host == "teams.office.com"
+        || host.ends_with(".teams.office.com")
         || host == "teams.live.com"
 }
 
