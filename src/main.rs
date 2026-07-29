@@ -79,6 +79,10 @@ fn handle_navigation(url: String) -> bool {
         let host = parsed.host_str().unwrap_or("");
         if host == "login.microsoftonline.com"
             || host.ends_with(".microsoftonline.com")
+            || host == "login.live.com"
+            || host.ends_with(".login.live.com")
+            || host == "account.live.com"
+            || host.ends_with(".account.live.com")
             || host == "www.microsoft.com"
             || host == "support.microsoft.com"
         {
@@ -603,8 +607,23 @@ fn get_teams_url(config: &AppConfig) -> String {
 
 #[cfg(test)]
 mod popup_routing_tests {
-    use super::{looks_like_chat_request, parse_webview_event};
+    use super::{handle_navigation, looks_like_chat_request, parse_webview_event};
     use crate::ui::AppEvent;
+
+    #[test]
+    fn allows_login_live_com_navigation() {
+        assert!(handle_navigation("https://login.live.com/".into()));
+    }
+
+    #[test]
+    fn allows_login_microsoftonline_com_navigation() {
+        assert!(handle_navigation("https://login.microsoftonline.com/".into()));
+    }
+
+    #[test]
+    fn blocks_external_url_navigation() {
+        assert!(!handle_navigation("https://example.com/".into()));
+    }
 
     #[test]
     fn parses_chat_open_ipc_event() {
