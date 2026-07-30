@@ -25,6 +25,8 @@ use wry::WebViewBuilderExtWindows;
 
 use app::AppConfig;
 use config::ConfigManager;
+
+const CHROME_UA: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 use ui::AppEvent;
 use ui::auto_read::get_auto_read_script;
 use ui::badge::{parse_unread_count, play_notification_sound, update_taskbar_badge};
@@ -310,7 +312,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let proxy_for_popouts = proxy.clone();
     let proxy_for_ipc = proxy.clone();
     let mut webview_builder = WebViewBuilder::new()
-        .with_url(&teams_url);
+        .with_url(&teams_url)
+        .with_user_agent(CHROME_UA);
 
     #[cfg(target_os = "windows")]
     {
@@ -422,6 +425,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let proxy_for_secondary = proxy.clone();
                     let proxy_for_secondary_ipc = proxy.clone();
                     let builder = WebViewBuilder::new()
+                        .with_user_agent(CHROME_UA)
                         .with_initialization_script(chat_popout_js.clone())
                         .with_navigation_handler(handle_navigation)
                         .with_new_window_req_handler(
@@ -468,6 +472,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let proxy_for_secondary = proxy.clone();
                     let proxy_for_secondary_ipc = proxy.clone();
                     let builder = WebViewBuilder::new()
+                        .with_user_agent(CHROME_UA)
                         .with_initialization_script(chat_popout_js.clone())
                         .with_navigation_handler(handle_navigation)
                         .with_new_window_req_handler(
