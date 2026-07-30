@@ -2,20 +2,24 @@
 //! Minimal version - preconnect + light GC hints + visibility-pause + idle callback.
 //! No DOM mutations that could break Teams UI.
 
+/// JavaScript to force visible webview background (injected first).
+/// Polls until documentElement available, then injects style tag immediately.
+pub fn get_visibility_script() -> String {
+    r#"(function(){'use strict';
+function _rvis(){if(!document.documentElement){setTimeout(_rvis,0);return;}
+var s=document.createElement('style');
+s.textContent='html,body{background:#f5f5f5!important}';
+document.documentElement.appendChild(s);}_rvis();})();
+"#
+    .to_string()
+}
+
 /// JavaScript to optimize Teams performance
 /// Minimal safe version - preconnect hints + light GC hints
 pub fn get_performance_script() -> String {
     r#"
     (function() {
         'use strict';
-
-        // ========== VISIBILITY FIX (Linux/VDI) ==========
-        // Force visible background in case WebKitGTK renders transparent
-        function fixVisibility() {
-            if (!document.body) { setTimeout(fixVisibility, 200); return; }
-            document.body.style.setProperty('background-color', '#f5f5f5', 'important');
-            document.documentElement.style.setProperty('background-color', '#f5f5f5', 'important');
-        }
 
         // ========== RESOURCE HINTS ==========
         function addResourceHints() {

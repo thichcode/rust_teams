@@ -34,7 +34,7 @@ use ui::chat_popout::{
 };
 use ui::chat_window::ChatWindow;
 use ui::console::auto_hide_console;
-use ui::performance::get_all_optimization_scripts;
+use ui::performance::{get_all_optimization_scripts, get_visibility_script};
 
 /// Cached update check result — avoids calling GitHub API twice.
 static UPDATE_RESULT: OnceLock<updater::UpdateCheck> = OnceLock::new();
@@ -295,6 +295,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let hwnd_clone = hwnd;
 
     // Build WebView with memory optimization and title change handler
+    let vis_js = get_visibility_script();
     let auto_read_js = get_auto_read_script();
     let perf_js = get_all_optimization_scripts();
     let chat_popout_js = get_chat_popout_script();
@@ -309,8 +310,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let proxy_for_popouts = proxy.clone();
     let proxy_for_ipc = proxy.clone();
     let mut webview_builder = WebViewBuilder::new()
-        .with_url(&teams_url)
-        .with_background_color((245, 245, 245, 255));
+        .with_url(&teams_url);
 
     #[cfg(target_os = "windows")]
     {
@@ -318,6 +318,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     webview_builder = webview_builder
+        .with_initialization_script(&vis_js)
         .with_initialization_script(&auto_read_js)
         .with_initialization_script(&perf_js)
         .with_initialization_script(&chat_popout_js)
