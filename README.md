@@ -52,10 +52,10 @@ Download the latest `.exe` or `.zip` from [Releases](https://github.com/thichcod
 
 ```bash
 # Download the latest .deb from Releases
-wget https://github.com/thichcode/rust_teams/releases/download/v0.9.59/rust-teams_0.9.59_amd64.deb
+wget https://github.com/thichcode/rust_teams/releases/download/v0.9.61/rust-teams_0.9.61_amd64.deb
 
 # Install
-sudo dpkg -i rust-teams_0.9.59_amd64.deb
+sudo dpkg -i rust-teams_0.9.61_amd64.deb
 sudo apt-get install -f   # install missing dependencies if any
 ```
 
@@ -64,7 +64,7 @@ After installation, launch from app menu or run `rust_teams`.
 **Option 2 — Binary archive:**
 
 ```bash
-wget https://github.com/thichcode/rust_teams/releases/download/v0.9.59/rust_teams-linux-x64.tar.gz
+wget https://github.com/thichcode/rust_teams/releases/download/v0.9.61/rust_teams-linux-x64.tar.gz
 tar xzf rust_teams-linux-x64.tar.gz
 ./rust_teams-linux-x64
 ```
