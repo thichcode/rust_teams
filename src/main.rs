@@ -309,7 +309,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let proxy_for_popouts = proxy.clone();
     let proxy_for_ipc = proxy.clone();
     let mut webview_builder = WebViewBuilder::new()
-        .with_url(&teams_url);
+        .with_url(&teams_url)
+        .with_background_color((245, 245, 245, 255));
 
     #[cfg(target_os = "windows")]
     {

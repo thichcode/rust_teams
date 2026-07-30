@@ -9,6 +9,14 @@ pub fn get_performance_script() -> String {
     (function() {
         'use strict';
 
+        // ========== VISIBILITY FIX (Linux/VDI) ==========
+        // Force visible background in case WebKitGTK renders transparent
+        function fixVisibility() {
+            if (!document.body) { setTimeout(fixVisibility, 200); return; }
+            document.body.style.setProperty('background-color', '#f5f5f5', 'important');
+            document.documentElement.style.setProperty('background-color', '#f5f5f5', 'important');
+        }
+
         // ========== RESOURCE HINTS ==========
         function addResourceHints() {
             const origins = [
@@ -120,6 +128,7 @@ pub fn get_performance_script() -> String {
         }
 
         function init() {
+            fixVisibility();
             addResourceHints();
             setupVisibilityPause();
             setupIdleTracking();

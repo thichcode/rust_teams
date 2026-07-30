@@ -92,6 +92,8 @@ App checks GitHub Releases on startup. If new version found → downloads `rust_
 | Wayland flicker / missing icons | `export GTK_BACKEND=x11` before launch, or use X11 session |
 | Auto-update fails (permission denied) | Install binary in `~/.local/bin` or run once with `sudo` to update |
 | WebKitGTK WebProcess crashes | `export WEBKIT_DISABLE_DMABUF_RENDERER=1` |
+| White/blank screen on VDI (no GPU) | `export WEBKIT_DISABLE_DMABUF_RENDERER=1` or `export LIBGL_ALWAYS_SOFTWARE=true` |
+| Login page renders all-white or hard to see | `export WEBKIT_DISABLE_COMPOSITING_MODE=1` before launch |
 
 ---
 
