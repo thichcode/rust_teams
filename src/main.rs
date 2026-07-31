@@ -3,6 +3,8 @@
 
 mod app;
 mod config;
+#[cfg(not(target_os = "windows"))]
+mod linux_launcher;
 mod memory;
 mod ui;
 mod updater;
@@ -23,7 +25,7 @@ use wry::{NewWindowFeatures, NewWindowResponse, WebViewBuilder};
 #[cfg(target_os = "windows")]
 use wry::WebViewBuilderExtWindows;
 
-use app::{AppConfig, WebkitRenderMode};
+use app::{AppConfig, LinuxBackend, WebkitRenderMode};
 use config::ConfigManager;
 
 const CHROME_UA: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
@@ -275,6 +277,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Determine Teams URL (override with --url for diagnostics)
     let teams_url = parse_cli_url(&cli_args).unwrap_or_else(|| get_teams_url(&config));
     eprintln!("🌐 Teams URL: {}", teams_url);
+
+    // Parse --backend from CLI (auto | webkit | chromium)
+    if let Some(backend) = parse_cli_backend(&cli_args) {
+        eprintln!("🚀 CLI backend override: {:?}", backend);
+        config.linux_backend = backend;
+    }
+
+    // On non-Windows: decide backend; Chromium app-mode may exit early.
+    if try_launch_chromium_backend(&config, &teams_url)? {
+        return Ok(());
+    }
+
     eprintln!(
         "🧠 Memory optimization: {}",
         if config.memory_optimization.enabled {
@@ -645,6 +659,99 @@ fn parse_cli_url(args: &[String]) -> Option<String> {
         }
     }
     None
+}
+
+/// Parse `--backend auto|webkit|chromium` from CLI args.
+fn parse_cli_backend(args: &[String]) -> Option<LinuxBackend> {
+    let mut iter = args.iter().peekable();
+    while let Some(arg) = iter.next() {
+        if arg == "--backend" {
+            return match iter.next()?.as_str() {
+                "auto" => Some(LinuxBackend::Auto),
+                "webkit" => Some(LinuxBackend::Webkit),
+                "chromium" => Some(LinuxBackend::Chromium),
+                _ => {
+                    eprintln!("⚠️  Unknown backend. Use: auto | webkit | chromium");
+                    None
+                }
+            };
+        }
+    }
+    None
+}
+
+/// Try to launch Teams in a Chromium app-mode window.
+///
+/// Returns `Ok(true)` if the Chromium backend was used (app exits),
+/// `Ok(false)` if we should continue with the embedded WebView.
+#[cfg(target_os = "windows")]
+fn try_launch_chromium_backend(_config: &AppConfig, _url: &str) -> Result<bool, Box<dyn Error>> {
+    Ok(false)
+}
+
+/// Try to launch Teams in a Chromium app-mode window (non-Windows).
+#[cfg(not(target_os = "windows"))]
+fn try_launch_chromium_backend(config: &AppConfig, url: &str) -> Result<bool, Box<dyn Error>> {
+    let want_chromium = match config.linux_backend {
+        LinuxBackend::Chromium => true,
+        LinuxBackend::Auto => linux_launcher::find_chromium_browser().is_some(),
+        LinuxBackend::Webkit => false,
+    };
+
+    if !want_chromium {
+        log::info!("Backend: embedded WebKitGTK webview");
+        return Ok(false);
+    }
+
+    let Some(browser) = linux_launcher::find_chromium_browser() else {
+        if config.linux_backend == LinuxBackend::Chromium {
+            eprintln!("⚠️  No Chromium-based browser found. Falling back to WebKitGTK.");
+            log::warn!("No Chromium browser found, falling back to WebKitGTK");
+            return Ok(false);
+        }
+        eprintln!("ℹ️  No Chromium browser found — using embedded WebKitGTK webview.");
+        eprintln!("   Tip: install Google Chrome/Chromium for full Teams support (or use --backend webkit to silence).");
+        log::info!("No Chromium browser found, using embedded WebKitGTK webview");
+        return Ok(false);
+    };
+
+    let flags: Vec<String> = memory::build_browser_args(&config.memory_optimization)
+        .split_whitespace()
+        .map(str::to_string)
+        .collect();
+
+    let user_data_dir = config_manager_launcher_dir();
+    eprintln!(
+        "🚀 Launching Teams in {} app-mode (profile: {}) ...",
+        browser,
+        user_data_dir.display()
+    );
+    log::info!(
+        "Launching Chromium backend: {} --app={}",
+        browser,
+        url
+    );
+
+    match linux_launcher::launch_app_mode(&browser, url, &flags, &user_data_dir) {
+        Ok(()) => {
+            log::info!("Chromium app-mode launched successfully");
+            Ok(true)
+        }
+        Err(e) => {
+            eprintln!("⚠️  Chromium launch failed ({e}). Falling back to WebKitGTK.");
+            log::warn!("Chromium launch failed, falling back to WebKitGTK: {e}");
+            Ok(false)
+        }
+    }
+}
+
+/// Compute the Chromium profile directory from the app config directory.
+#[cfg(not(target_os = "windows"))]
+fn config_manager_launcher_dir() -> std::path::PathBuf {
+    let base = directories::ProjectDirs::from("com", "rust-teams", "app")
+        .map(|p| p.config_dir().to_path_buf())
+        .unwrap_or_else(|| std::path::PathBuf::from(".rust-teams"));
+    base.join("chromium-profile")
 }
 
 /// Parse `--render-mode auto|compat` from CLI args.

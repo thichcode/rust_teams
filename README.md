@@ -52,19 +52,30 @@ Download the latest `.exe` or `.zip` from [Releases](https://github.com/thichcod
 
 ```bash
 # Download the latest .deb from Releases
-wget https://github.com/thichcode/rust_teams/releases/download/v0.9.62/rust-teams_0.9.62_amd64.deb
+wget https://github.com/thichcode/rust_teams/releases/download/v0.9.63/rust-teams_0.9.63_amd64.deb
 
 # Install
-sudo dpkg -i rust-teams_0.9.62_amd64.deb
+sudo dpkg -i rust-teams_0.9.63_amd64.deb
 sudo apt-get install -f   # install missing dependencies if any
 ```
 
 After installation, launch from app menu or run `rust_teams`.
 
+> **Linux rendering backend:** The app auto-detects a Chromium-based browser
+> (Google Chrome / Chromium / Edge / Brave) and launches Teams in a clean
+> app-mode window (`--app=`). This gives full Chromium rendering support —
+> required on Ubuntu 22.04 where the bundled WebKitGTK (2.40) is too old for
+> the modern Teams web app. If no Chromium browser is found, it falls back to
+> the embedded WebKitGTK webview.
+>
+> Force a backend with `--backend auto|webkit|chromium`, or set
+> `"linux_backend": "webkit"` in `~/.config/rust-teams/config.json`.
+> Use `--backend webkit` if you prefer the embedded window.
+
 **Option 2 — Binary archive:**
 
 ```bash
-wget https://github.com/thichcode/rust_teams/releases/download/v0.9.62/rust_teams-linux-x64.tar.gz
+wget https://github.com/thichcode/rust_teams/releases/download/v0.9.63/rust_teams-linux-x64.tar.gz
 tar xzf rust_teams-linux-x64.tar.gz
 ./rust_teams-linux-x64
 ```

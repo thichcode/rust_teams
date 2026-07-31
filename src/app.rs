@@ -26,6 +26,29 @@ impl Default for WebkitRenderMode {
     }
 }
 
+fn default_linux_backend() -> LinuxBackend {
+    LinuxBackend::default()
+}
+
+/// Linux rendering backend choice.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LinuxBackend {
+    /// Auto — use Chromium app-mode if a Chromium-based browser is installed,
+    /// otherwise fall back to the embedded WebKitGTK webview.
+    Auto,
+    /// Always use the embedded WebKitGTK webview.
+    Webkit,
+    /// Always launch Teams in a Chromium-based browser app-mode window.
+    Chromium,
+}
+
+impl Default for LinuxBackend {
+    fn default() -> Self {
+        Self::Auto
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub window_settings: WindowSettings,
@@ -39,6 +62,9 @@ pub struct AppConfig {
     /// WebKitGTK rendering mode (Linux VDI compat).
     #[serde(default = "default_render_mode")]
     pub webkit_render_mode: WebkitRenderMode,
+    /// Linux backend: embedded WebKit webview vs Chromium app-mode.
+    #[serde(default = "default_linux_backend")]
+    pub linux_backend: LinuxBackend,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

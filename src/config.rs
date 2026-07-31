@@ -3,7 +3,7 @@ use directories::ProjectDirs;
 use std::fs;
 use std::path::PathBuf;
 
-use crate::app::{AppConfig, MemoryOptimization, Profile, WebkitRenderMode, WindowSettings};
+use crate::app::{AppConfig, LinuxBackend, MemoryOptimization, Profile, WebkitRenderMode, WindowSettings};
 
 #[derive(Debug)]
 pub struct ConfigManager {
@@ -37,6 +37,7 @@ impl ConfigManager {
             memory_optimization: MemoryOptimization::default(),
             browser_path: None,
             webkit_render_mode: WebkitRenderMode::default(),
+            linux_backend: LinuxBackend::default(),
         }
     }
 

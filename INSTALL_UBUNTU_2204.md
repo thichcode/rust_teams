@@ -8,7 +8,7 @@ Binary targets **x86_64 Linux** with WebKitGTK 4.1. Runs on Ubuntu 22.04+ Deskto
 
 ```bash
 # Download the latest .deb from Releases
-VERSION="v0.9.62"   # or latest from https://github.com/thichcode/rust_teams/releases
+VERSION="v0.9.63"   # or latest from https://github.com/thichcode/rust_teams/releases
 wget "https://github.com/thichcode/rust_teams/releases/download/${VERSION}/rust-teams_${VERSION#v}_amd64.deb"
 
 # Install
@@ -33,7 +33,7 @@ After install, search **"R Teams"** in the app launcher or run `rust_teams`.
 If you prefer not to use .deb:
 
 ```bash
-VERSION="v0.9.62"   # or latest from https://github.com/thichcode/rust_teams/releases
+VERSION="v0.9.63"   # or latest from https://github.com/thichcode/rust_teams/releases
 cd /tmp
 wget "https://github.com/thichcode/rust_teams/releases/download/${VERSION}/rust_teams-linux-x64.tar.gz"
 wget "https://github.com/thichcode/rust_teams/releases/download/${VERSION}/rust_teams-linux-x64.tar.gz.sha256"
@@ -94,6 +94,9 @@ App checks GitHub Releases on startup. If new version found → downloads `rust_
 | WebKitGTK WebProcess crashes | `export WEBKIT_DISABLE_DMABUF_RENDERER=1` |
 | White/blank screen on VDI (no GPU) | `export WEBKIT_DISABLE_DMABUF_RENDERER=1` or `export LIBGL_ALWAYS_SOFTWARE=true` |
 | Login page renders all-white or hard to see | `export WEBKIT_DISABLE_COMPOSITING_MODE=1` before launch |
+| Teams shows blank white page (WebKitGTK 2.40 too old) | Install Google Chrome/Chromium/Edge — the app auto-launches Teams in a Chromium app-mode window |
+| Force Chromium backend | `rust_teams --backend chromium` |
+| Force embedded webview | `rust_teams --backend webkit` |
 
 ---
 
