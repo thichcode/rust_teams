@@ -272,8 +272,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    // Determine Teams URL
-    let teams_url = get_teams_url(&config);
+    // Determine Teams URL (override with --url for diagnostics)
+    let teams_url = parse_cli_url(&cli_args).unwrap_or_else(|| get_teams_url(&config));
     eprintln!("🌐 Teams URL: {}", teams_url);
     eprintln!(
         "🧠 Memory optimization: {}",
@@ -634,6 +634,17 @@ fn get_teams_url(config: &AppConfig) -> String {
     }
 
     "https://teams.microsoft.com".to_string()
+}
+
+/// Parse `--url <url>` from CLI args (diagnostic override).
+fn parse_cli_url(args: &[String]) -> Option<String> {
+    let mut iter = args.iter().peekable();
+    while let Some(arg) = iter.next() {
+        if arg == "--url" {
+            return iter.next().cloned();
+        }
+    }
+    None
 }
 
 /// Parse `--render-mode auto|compat` from CLI args.
