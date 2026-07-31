@@ -23,7 +23,7 @@ use wry::{NewWindowFeatures, NewWindowResponse, WebViewBuilder};
 #[cfg(target_os = "windows")]
 use wry::WebViewBuilderExtWindows;
 
-use app::AppConfig;
+use app::{AppConfig, WebkitRenderMode};
 use config::ConfigManager;
 
 const CHROME_UA: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
@@ -246,6 +246,30 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Apply CLI memory profile override (nếu có)
     if let Some(profile) = cli_profile {
         profile.apply_to(&mut config.memory_optimization);
+    }
+
+    // Parse --render-mode from CLI
+    let cli_render_mode = parse_render_mode(&cli_args);
+    if let Some(mode) = cli_render_mode {
+        eprintln!("🎨 CLI render mode override: {:?}", mode);
+        config.webkit_render_mode = mode;
+    }
+
+    // Apply WebKitGTK environment variables (Linux only, harmless on other platforms)
+    let render_mode = config.webkit_render_mode;
+    match render_mode {
+        WebkitRenderMode::Compat => {
+            // SAFETY: called once at startup before any threads; single-threaded context
+            unsafe {
+                std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+                std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+                std::env::set_var("LIBGL_ALWAYS_SOFTWARE", "true");
+            }
+            log::info!("WebKit render mode: COMPAT (software rendering)");
+        }
+        WebkitRenderMode::Auto => {
+            log::info!("WebKit render mode: AUTO (hardware compositing)");
+        }
     }
 
     // Determine Teams URL
@@ -610,6 +634,24 @@ fn get_teams_url(config: &AppConfig) -> String {
     }
 
     "https://teams.microsoft.com".to_string()
+}
+
+/// Parse `--render-mode auto|compat` from CLI args.
+fn parse_render_mode(args: &[String]) -> Option<WebkitRenderMode> {
+    let mut iter = args.iter().peekable();
+    while let Some(arg) = iter.next() {
+        if arg == "--render-mode" {
+            match iter.next()?.as_str() {
+                "compat" => return Some(WebkitRenderMode::Compat),
+                "auto" => return Some(WebkitRenderMode::Auto),
+                _ => {
+                    eprintln!("⚠️  Unknown render mode. Use: auto | compat");
+                    return None;
+                }
+            }
+        }
+    }
+    None
 }
 
 #[cfg(test)]

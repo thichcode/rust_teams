@@ -7,6 +7,25 @@ fn default_memory_config() -> MemoryOptimization {
     MemoryOptimization::default()
 }
 
+fn default_render_mode() -> WebkitRenderMode {
+    WebkitRenderMode::default()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WebkitRenderMode {
+    /// Default — no env vars. Requires GPU/compositor.
+    Auto,
+    /// Compat — disables GPU compositing + dmabuf; uses software rendering.
+    Compat,
+}
+
+impl Default for WebkitRenderMode {
+    fn default() -> Self {
+        Self::Compat
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub window_settings: WindowSettings,
@@ -17,6 +36,9 @@ pub struct AppConfig {
     /// Path to preferred browser executable, or None for system default.
     #[serde(default)]
     pub browser_path: Option<String>,
+    /// WebKitGTK rendering mode (Linux VDI compat).
+    #[serde(default = "default_render_mode")]
+    pub webkit_render_mode: WebkitRenderMode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
