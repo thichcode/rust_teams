@@ -732,7 +732,7 @@ fn try_launch_chromium_backend(config: &AppConfig, url: &str) -> Result<bool, Bo
         log::info!("Running as root — adding --no-sandbox");
     }
 
-    let user_data_dir = chromium_user_data_dir();
+    let user_data_dir = linux_launcher::snap_compatible_profile_path(&browser);
     eprintln!(
         "🚀 Launching Teams in {} app-mode (profile: {}) ...",
         browser,
@@ -751,19 +751,6 @@ fn try_launch_chromium_backend(config: &AppConfig, url: &str) -> Result<bool, Bo
             Ok(false)
         }
     }
-}
-
-/// Compute the Chromium user-data dir.
-///
-/// Uses `$HOME/.rust-teams/chromium-profile` instead of the config dir
-/// (e.g. `.config/app/`) because snap-packaged Chromium cannot write to
-/// arbitrary subdirectories inside `.config` due to sandbox restrictions.
-#[cfg(not(target_os = "windows"))]
-fn chromium_user_data_dir() -> std::path::PathBuf {
-    let home = std::env::var_os("HOME")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| std::path::PathBuf::from("."));
-    home.join(".rust-teams").join("chromium-profile")
 }
 
 /// Handle `--install-chromium`: on Windows does nothing (no-op).

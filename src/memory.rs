@@ -160,7 +160,7 @@ pub fn build_browser_args(cfg: &MemoryOptimization) -> String {
 
     // ---- Extra Chromium-specific flags (Linux / lightweight mode) ----
     // These are safe for WebView2 too and significantly reduce memory on Linux.
-    flags.push("--disable-dev-shm-usage".into());       // use /tmp instead of /dev/shm
+    flags.push("--disable-dev-shm-usage".into()); // use /tmp instead of /dev/shm
     flags.push("--disable-background-timer-throttling".into());
     flags.push("--disable-renderer-backgrounding".into());
     flags.push("--disable-backgrounding-occluded-windows".into());

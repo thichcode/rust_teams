@@ -208,6 +208,33 @@ pub fn running_as_root() -> bool {
         .unwrap_or(false)
 }
 
+/// Get a snap-compatible profile path for Chromium.
+///
+/// Snap-packaged Chromium cannot write to arbitrary directories inside `.config`
+/// due to sandbox restrictions. This function detects snap Chromium and returns
+/// a compatible path.
+pub fn snap_compatible_profile_path(browser: &str) -> PathBuf {
+    let is_snap =
+        browser.starts_with("/snap/") || browser == "chromium" || browser == "chromium-browser";
+
+    if is_snap {
+        // Snap Chromium can write to its own data directory
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."));
+        home.join("snap")
+            .join("chromium")
+            .join("common")
+            .join("rust-teams-profile")
+    } else {
+        // For apt/flatpak Chromium, use the standard location
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("."));
+        home.join(".rust-teams").join("chromium-profile")
+    }
+}
+
 /// Launch the app in Chromium mode with an isolated profile.
 ///
 /// `extra_args` are additional Chromium flags (e.g. `--disable-gpu`).
