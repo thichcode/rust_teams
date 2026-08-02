@@ -96,12 +96,16 @@ fn download_chromium() -> Result<(), String> {
         .pointer("/channels/Stable/downloads/chrome")
         .and_then(|arr| arr.as_array())
         .and_then(|arr| {
-            arr.iter()
-                .find(|e| e.get("platform").and_then(|p| p.as_str()) == Some("linux-x64"))
+            arr.iter().find(|e| {
+                matches!(
+                    e.get("platform").and_then(|p| p.as_str()),
+                    Some("linux64") | Some("linux-x64")
+                )
+            })
         })
         .and_then(|e| e.get("url"))
         .and_then(|u| u.as_str())
-        .ok_or_else(|| "No linux-x64 Chrome download available in manifest".to_string())?;
+        .ok_or_else(|| "No linux64 Chrome download available in manifest".to_string())?;
 
     let version = manifest
         .pointer("/channels/Stable/version")
