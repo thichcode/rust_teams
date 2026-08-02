@@ -100,6 +100,7 @@ impl MemoryProfile {
 
 /// Build chuỗi browser args từ MemoryOptimization config
 /// Truyền vào `WebViewBuilder::with_additional_browser_args()` (Windows)
+/// hoặc `--extra-flags` khi launch Chromium app-mode (Linux).
 pub fn build_browser_args(cfg: &MemoryOptimization) -> String {
     if !cfg.enabled {
         return String::new();
@@ -156,6 +157,26 @@ pub fn build_browser_args(cfg: &MemoryOptimization) -> String {
             cfg.js_max_old_space_mb
         ));
     }
+
+    // ---- Extra Chromium-specific flags (Linux / lightweight mode) ----
+    // These are safe for WebView2 too and significantly reduce memory on Linux.
+    flags.push("--disable-dev-shm-usage".into());       // use /tmp instead of /dev/shm
+    flags.push("--disable-background-timer-throttling".into());
+    flags.push("--disable-renderer-backgrounding".into());
+    flags.push("--disable-backgrounding-occluded-windows".into());
+    flags.push("--disable-hang-monitor".into());
+    flags.push("--disable-client-side-phishing-detection".into());
+    flags.push("--disable-cloud-import".into());
+    flags.push("--disable-default-apps".into());
+    flags.push("--disable-popup-blocking".into());
+    flags.push("--disable-speech-recognition".into());
+    flags.push("--disable-speech-synthesis-api".into());
+    flags.push("--disable-voice-input".into());
+    flags.push("--aggressive-cache-discard".into());
+    flags.push("--disable-offer-store".into());
+    flags.push("--disable-offer-upload-credit-cards".into());
+    flags.push("--disable-password-generation".into());
+    flags.push("--disable-autofill-server-communication".into());
 
     flags.join(" ")
 }
