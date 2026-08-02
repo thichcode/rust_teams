@@ -115,7 +115,7 @@ fn download_chromium() -> Result<(), String> {
         .pointer("/channels/Stable/version")
         .and_then(|v| v.as_str())
         .unwrap_or("unknown");
-    println!("⬇️ Downloading portable Chrome ({version}) for Teams...");
+    log::info!("Downloading portable Chrome {version} for Teams...");
 
     // 2. Download the zip into the cache dir.
     let zip_path = home.join("chrome-linux64.zip");
