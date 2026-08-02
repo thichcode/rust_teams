@@ -70,7 +70,12 @@ pub fn ensure_chromium() -> Result<String, String> {
     }
     let exe = chromium_home()?.join("chrome-linux64").join("chrome");
     if exe.is_file() {
-        // Already downloaded previously.
+        // Already downloaded — still fix permissions (upgrades from older
+        // versions may have been extracted without exec bits).
+        #[cfg(unix)]
+        {
+            let _ = make_tree_executable(&chromium_home()?.join("chrome-linux64"));
+        }
         if let Ok(meta) = std::fs::metadata(&exe) {
             if meta.len() > 10_000_000 {
                 return Ok(exe.display().to_string());
