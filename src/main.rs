@@ -753,13 +753,17 @@ fn try_launch_chromium_backend(config: &AppConfig, url: &str) -> Result<bool, Bo
     }
 }
 
-/// Compute the Chromium user-data dir from the app config directory.
+/// Compute the Chromium user-data dir.
+///
+/// Uses `$HOME/.rust-teams/chromium-profile` instead of the config dir
+/// (e.g. `.config/app/`) because snap-packaged Chromium cannot write to
+/// arbitrary subdirectories inside `.config` due to sandbox restrictions.
 #[cfg(not(target_os = "windows"))]
 fn chromium_user_data_dir() -> std::path::PathBuf {
-    let base = directories::ProjectDirs::from("com", "rust-teams", "app")
-        .map(|p| p.config_dir().to_path_buf())
-        .unwrap_or_else(|| std::path::PathBuf::from(".rust-teams"));
-    base.join("chromium-profile")
+    let home = std::env::var_os("HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    home.join(".rust-teams").join("chromium-profile")
 }
 
 /// Handle `--install-chromium`: on Windows does nothing (no-op).
