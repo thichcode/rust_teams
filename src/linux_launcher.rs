@@ -5,8 +5,21 @@
 //! window (`--app=<url>`), which gives a clean app-like window with full
 //! Chromium rendering support.
 
-use std::path::PathBuf;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+
+/// Base directory holding the downloaded portable Chromium.
+pub fn chromium_home() -> Result<PathBuf, String> {
+    let base = directories::ProjectDirs::from("", "", "rust-teams")
+        .map(|d| d.cache_dir().to_path_buf())
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    Ok(base.join("chromium"))
+}
+
+/// Chrome-for-Testing manifest (latest stable) with direct linux64 download URL.
+const CHROMIUM_MANIFEST_URL: &str =
+    "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json";
 
 /// Known Chromium-based browser executable names (checked on PATH).
 const BROWSER_CANDIDATES: &[&str] = &[
@@ -50,7 +63,111 @@ pub fn find_chromium_browser() -> Option<String> {
         .map(|p| p.to_string())
 }
 
-/// Launch the URL in Chromium app-mode with an isolated profile.
+/// Resolve a usable Chromium binary: prefer an installed browser, otherwise
+/// download a portable Chrome (Chrome for Testing) if it is not cached yet.
+pub fn ensure_chromium() -> Result<String, String> {
+    if let Some(browser) = find_chromium_browser() {
+        return Ok(browser);
+    }
+    let exe = chromium_home()?.join("chrome-linux64").join("chrome");
+    if exe.is_file() {
+        // Already downloaded previously.
+        if let Ok(meta) = std::fs::metadata(&exe) {
+            if meta.len() > 10_000_000 {
+                return Ok(exe.display().to_string());
+            }
+        }
+    }
+    download_chromium()?;
+    Ok(exe.display().to_string())
+}
+
+/// Download and extract a portable Chrome (Chrome for Testing) into the cache dir.
+fn download_chromium() -> Result<(), String> {
+    let home = chromium_home()?;
+    fs::create_dir_all(&home).map_err(|e| format!("Cannot create {}: {e}", home.display()))?;
+
+    // 1. Resolve the linux64 download URL from the manifest.
+    let manifest: serde_json::Value = reqwest::blocking::get(CHROMIUM_MANIFEST_URL)
+        .map_err(|e| format!("Failed to fetch Chrome manifest: {e}"))?
+        .json()
+        .map_err(|e| format!("Failed to parse Chrome manifest: {e}"))?;
+    let url = manifest
+        .pointer("/channels/Stable/downloads/chrome")
+        .and_then(|arr| arr.as_array())
+        .and_then(|arr| {
+            arr.iter()
+                .find(|e| e.get("platform").and_then(|p| p.as_str()) == Some("linux-x64"))
+        })
+        .and_then(|e| e.get("url"))
+        .and_then(|u| u.as_str())
+        .ok_or_else(|| "No linux-x64 Chrome download available in manifest".to_string())?;
+
+    let version = manifest
+        .pointer("/channels/Stable/version")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    println!("⬇️ Downloading portable Chrome ({version}) for Teams...");
+
+    // 2. Download the zip into the cache dir.
+    let zip_path = home.join("chrome-linux64.zip");
+    let mut resp = reqwest::blocking::get(url).map_err(|e| format!("Download failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("Download failed with HTTP {}", resp.status()));
+    }
+    let mut out = fs::File::create(&zip_path).map_err(|e| format!("Cannot write {}: {e}", zip_path.display()))?;
+    std::io::copy(&mut resp, &mut out).map_err(|e| format!("Download interrupted: {e}"))?;
+
+    // 3. Extract.
+    extract_zip(&zip_path, &home)?;
+
+    // 4. Mark executable.
+    let chrome = home.join("chrome-linux64").join("chrome");
+    if !chrome.is_file() {
+        return Err("Portable Chrome archive did not contain chrome-linux64/chrome".to_string());
+    }
+    set_executable(&chrome);
+
+    let _ = fs::remove_file(&zip_path);
+    println!("✅ Portable Chrome ready at {}", chrome.display());
+    Ok(())
+}
+
+/// Extract every entry of a zip archive into `dest`.
+fn extract_zip(zip_path: &Path, dest: &Path) -> Result<(), String> {
+    let file = fs::File::open(zip_path).map_err(|e| e.to_string())?;
+    let mut archive = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i).map_err(|e| e.to_string())?;
+        let name = entry.name().to_string();
+        let out_path = dest.join(&name);
+        if entry.is_dir() {
+            fs::create_dir_all(&out_path).map_err(|e| format!("Cannot create {}: {e}", out_path.display()))?;
+        } else {
+            if let Some(parent) = out_path.parent() {
+                fs::create_dir_all(parent).map_err(|e| format!("Cannot create {}: {e}", parent.display()))?;
+            }
+            let mut f = fs::File::create(&out_path).map_err(|e| format!("Cannot write {}: {e}", out_path.display()))?;
+            std::io::copy(&mut entry, &mut f).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+// Allow unused on non-Unix (the module is not(windows); on non-unix non-windows, guard).
+#[cfg(unix)]
+fn set_executable(path: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    let _ = fs::metadata(path).and_then(|m| {
+        let mut p = m.permissions();
+        p.set_mode(0o755);
+        fs::set_permissions(path, p)
+    });
+}
+#[cfg(not(unix))]
+fn set_executable(_path: &Path) {}
+
+/// Launch the app in Chromium mode with an isolated profile.
 ///
 /// `extra_args` are additional Chromium flags (e.g. `--disable-gpu`).
 /// Returns the spawned child on success.

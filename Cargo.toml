@@ -3,7 +3,7 @@ members = ["rteams-meeting-assistant"]
 
 [package]
 name = "rust_teams"
-version = "0.9.64"
+version = "0.9.65"
 edition = "2024"  # Latest Rust edition (2024)
 
 [features]
@@ -44,6 +44,10 @@ regex = "1.0"
 
 # Checksum verification for auto-update downloads
 sha2 = "0.10"
+
+# Extracting the portable Chromium download on Linux
+[target.'cfg(not(windows))'.dependencies]
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 # Windows-specific dependencies
 [target.'cfg(windows)'.dependencies]

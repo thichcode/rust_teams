@@ -4575,7 +4575,7 @@ dependencies = [
 
 [[package]]
 name = "rust_teams"
-version = "0.9.63"
+version = "0.9.64"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4592,6 +4592,7 @@ dependencies = [
  "thiserror 1.0.69",
  "winapi",
  "wry",
+ "zip",
 ]
 
 [[package]]
