@@ -18,7 +18,7 @@ env_logger = "0.11"
 async-trait = "0.1"
 hound = "3.5"
 uuid = { version = "1", features = ["v4"] }
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "8", default-features = false, features = ["deflate"] }
 tray-icon = "0.19"
 global-hotkey = "0.8"
 

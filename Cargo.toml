@@ -47,7 +47,7 @@ sha2 = "0.10"
 
 # Extracting the portable Chromium download on Linux
 [target.'cfg(not(windows))'.dependencies]
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "8", default-features = false, features = ["deflate"] }
 
 # Windows-specific dependencies
 [target.'cfg(windows)'.dependencies]
