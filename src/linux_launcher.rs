@@ -125,15 +125,47 @@ fn download_chromium() -> Result<(), String> {
     // 3. Extract.
     extract_zip(&zip_path, &home)?;
 
-    // 4. Mark executable.
-    let chrome = home.join("chrome-linux64").join("chrome");
-    if !chrome.is_file() {
+    // 4. Mark everything executable.
+    // Chrome ships multiple helper binaries (chrome_crashpad_handler, and the
+    // *.so subprocesses) that must be executable. The zip crate does not
+    // restore the Unix exec bit, so apply +x recursively to the whole tree.
+    let chrome_dir = home.join("chrome-linux64");
+    if !chrome_dir.join("chrome").is_file() {
         return Err("Portable Chrome archive did not contain chrome-linux64/chrome".to_string());
     }
-    set_executable(&chrome);
+    #[cfg(unix)]
+    if let Err(e) = make_tree_executable(&chrome_dir) {
+        return Err(format!(
+            "Failed to set executable bits on {}: {e}",
+            chrome_dir.display()
+        ));
+    }
 
     let _ = fs::remove_file(&zip_path);
-    println!("✅ Portable Chrome ready at {}", chrome.display());
+    println!(
+        "✅ Portable Chrome ready at {}",
+        chrome_dir.join("chrome").display()
+    );
+    Ok(())
+}
+
+/// Recursively add the owner +x bit to every file/dir under `root`.
+#[cfg(unix)]
+fn make_tree_executable(root: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    for entry in fs::read_dir(root)? {
+        let entry = entry?;
+        let path = entry.path();
+        let meta = entry.metadata()?;
+        let mut perms = meta.permissions();
+        if perms.mode() & 0o111 == 0 {
+            perms.set_mode(perms.mode() | 0o111);
+            fs::set_permissions(&path, perms)?;
+        }
+        if path.is_dir() {
+            make_tree_executable(&path)?;
+        }
+    }
     Ok(())
 }
 
@@ -161,18 +193,15 @@ fn extract_zip(zip_path: &Path, dest: &Path) -> Result<(), String> {
     Ok(())
 }
 
-// Allow unused on non-Unix (the module is not(windows); on non-unix non-windows, guard).
-#[cfg(unix)]
-fn set_executable(path: &Path) {
-    use std::os::unix::fs::PermissionsExt;
-    let _ = fs::metadata(path).and_then(|m| {
-        let mut p = m.permissions();
-        p.set_mode(0o755);
-        fs::set_permissions(path, p)
-    });
+/// True if the current process is running as UID 0 (root).
+/// Chrome refuses to run as root without `--no-sandbox`.
+pub fn running_as_root() -> bool {
+    std::process::Command::new("id")
+        .arg("-u")
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "0")
+        .unwrap_or(false)
 }
-#[cfg(not(unix))]
-fn set_executable(_path: &Path) {}
 
 /// Launch the app in Chromium mode with an isolated profile.
 ///

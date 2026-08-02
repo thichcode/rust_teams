@@ -721,10 +721,16 @@ fn try_launch_chromium_backend(config: &AppConfig, url: &str) -> Result<bool, Bo
         }
     };
 
-    let flags: Vec<String> = memory::build_browser_args(&config.memory_optimization)
+    let mut flags: Vec<String> = memory::build_browser_args(&config.memory_optimization)
         .split_whitespace()
         .map(str::to_string)
         .collect();
+
+    // Chrome refuses to run as root without --no-sandbox (common in containers/VDI).
+    if linux_launcher::running_as_root() {
+        flags.push("--no-sandbox".to_string());
+        log::info!("Running as root — adding --no-sandbox");
+    }
 
     let user_data_dir = chromium_user_data_dir();
     eprintln!(
@@ -732,7 +738,6 @@ fn try_launch_chromium_backend(config: &AppConfig, url: &str) -> Result<bool, Bo
         browser,
         user_data_dir.display()
     );
-    log::info!("Launching Chromium backend: {} --app={}", browser, url);
     log::info!("Launching Chromium backend: {} --app={}", browser, url);
 
     match linux_launcher::launch_app_mode(&browser, url, &flags, &user_data_dir) {
