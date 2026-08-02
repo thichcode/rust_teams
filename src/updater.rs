@@ -109,14 +109,31 @@ pub fn check_for_update() -> Result<Option<UpdateInfo>, String> {
     }))
 }
 
-/// Find the download URL from release assets
+/// Filename of the auto-update asset for the current platform.
+fn platform_asset_name() -> &'static str {
+    #[cfg(target_os = "linux")]
+    {
+        "rust_teams-linux-x64.tar.gz"
+    }
+    #[cfg(target_os = "windows")]
+    {
+        "rust_teams-windows-x64.exe"
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    {
+        "rust_teams-windows-x64.exe"
+    }
+}
+
+/// Find the download URL from release assets (platform-aware)
 fn find_download_url(release: &serde_json::Value, tag: &str) -> Result<String, String> {
-    // Try to find exe asset with various patterns
+    let asset_name = platform_asset_name();
+
     if let Some(assets) = release["assets"].as_array() {
-        // Priority 1: rust_teams-windows-x64.exe
+        // Priority 1: exact platform asset name
         for asset in assets {
             if let Some(name) = asset["name"].as_str()
-                && name == "rust_teams-windows-x64.exe"
+                && name == asset_name
             {
                 return asset["browser_download_url"]
                     .as_str()
@@ -125,23 +142,11 @@ fn find_download_url(release: &serde_json::Value, tag: &str) -> Result<String, S
             }
         }
 
-        // Priority 2: Any .exe with x64
+        // Priority 2: any platform-appropriate asset
+        let candidates: &[&str] = platform_candidates();
         for asset in assets {
             if let Some(name) = asset["name"].as_str()
-                && name.ends_with(".exe")
-                && name.contains("x64")
-            {
-                return asset["browser_download_url"]
-                    .as_str()
-                    .map(|s| s.to_string())
-                    .ok_or("Missing download URL".to_string());
-            }
-        }
-
-        // Priority 3: Any .exe
-        for asset in assets {
-            if let Some(name) = asset["name"].as_str()
-                && name.ends_with(".exe")
+                && candidates.iter().any(|c| name.ends_with(c))
             {
                 return asset["browser_download_url"]
                     .as_str()
@@ -153,17 +158,34 @@ fn find_download_url(release: &serde_json::Value, tag: &str) -> Result<String, S
 
     // Fallback URL
     Ok(format!(
-        "https://github.com/{}/releases/download/v{}/rust_teams-windows-x64.exe",
-        REPO, tag
+        "https://github.com/{}/releases/download/v{}/{}",
+        REPO, tag, asset_name
     ))
 }
 
-/// Find the `.sha256` checksum asset matching the exe download, if published.
+/// Candidate filename suffixes per platform, for loose asset matching.
+fn platform_candidates() -> &'static [&'static str] {
+    #[cfg(target_os = "linux")]
+    {
+        &["tar.gz", ".deb"]
+    }
+    #[cfg(target_os = "windows")]
+    {
+        &[".exe"]
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    {
+        &[".exe"]
+    }
+}
+
+/// Find the `.sha256` checksum asset matching the platform download, if published.
 fn find_checksum_url(release: &serde_json::Value, tag: &str) -> Option<String> {
+    let checksum_name = format!("{}.sha256", platform_asset_name());
     if let Some(assets) = release["assets"].as_array() {
         for asset in assets {
             if let Some(name) = asset["name"].as_str()
-                && name == "rust_teams-windows-x64.exe.sha256"
+                && name == checksum_name
             {
                 return asset["browser_download_url"]
                     .as_str()
@@ -174,8 +196,8 @@ fn find_checksum_url(release: &serde_json::Value, tag: &str) -> Option<String> {
 
     // Fallback URL (only valid if the release actually publishes this asset)
     Some(format!(
-        "https://github.com/{}/releases/download/v{}/rust_teams-windows-x64.exe.sha256",
-        REPO, tag
+        "https://github.com/{}/releases/download/v{}/{}",
+        REPO, tag, checksum_name
     ))
 }
 
@@ -194,9 +216,9 @@ pub fn download_and_install(update: &UpdateInfo) -> Result<(), String> {
         std::env::current_exe().map_err(|e| format!("Failed to get exe path: {}", e))?;
     let exe_dir = current_exe.parent().ok_or("Failed to get exe directory")?;
 
-    // Create temp and backup paths
-    let temp_exe = exe_dir.join("rust_teams.exe.tmp");
-    let backup_exe = exe_dir.join("rust_teams.exe.bak");
+    // Create temp and backup paths (platform-neutral names)
+    let temp_exe = exe_dir.join("rust_teams.tmp");
+    let backup_exe = exe_dir.join("rust_teams.bak");
 
     // Clean up any leftover temp files
     if temp_exe.exists() {
@@ -374,7 +396,7 @@ fn validate_download(path: &PathBuf, expected_sha256: Option<&str>) -> Result<()
     let metadata =
         fs::metadata(path).map_err(|e| format!("Failed to read file metadata: {}", e))?;
 
-    // Check file size (should be at least 1MB for a valid exe)
+    // Check file size (should be at least 1MB for a valid update)
     if metadata.len() < 1024 * 1024 {
         return Err(format!(
             "File too small: {} bytes (expected at least 1MB)",
@@ -382,16 +404,27 @@ fn validate_download(path: &PathBuf, expected_sha256: Option<&str>) -> Result<()
         ));
     }
 
-    // Check PE header (Windows executable)
     let mut file = fs::File::open(path).map_err(|e| format!("Failed to open file: {}", e))?;
     let mut header = [0u8; 2];
     file.read_exact(&mut header)
         .map_err(|e| format!("Failed to read header: {}", e))?;
     drop(file);
 
-    // Check for MZ header (DOS executable)
-    if header[0] != b'M' || header[1] != b'Z' {
-        return Err("Not a valid Windows executable (missing MZ header)".to_string());
+    // Verify the platform binary magic header.
+    #[cfg(target_os = "windows")]
+    {
+        // DOS/PE executable ("MZ")
+        if header[0] != b'M' || header[1] != b'Z' {
+            return Err("Not a valid Windows executable (missing MZ header)".to_string());
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        // Linux update is a gzip'd tarball (magic: 0x1f 0x8b)
+        if header[0] != 0x1f || header[1] != 0x8b {
+            return Err("Not a valid Linux update (missing gzip magic)".to_string());
+        }
     }
 
     // Verify SHA256 checksum against the published value, when available.
@@ -411,50 +444,190 @@ fn validate_download(path: &PathBuf, expected_sha256: Option<&str>) -> Result<()
     Ok(())
 }
 
-/// Install the update by replacing the current exe
+/// Install the update by replacing the current executable, or by installing
+/// a fresh copy into the user's local bin dir when the current location is
+/// not writable (e.g. `/usr/bin` from a `.deb` install).
 fn install_update(
-    temp_exe: &PathBuf,
+    temp_path: &PathBuf,
     current_exe: &PathBuf,
-    backup_exe: &PathBuf,
+    backup_path: &PathBuf,
 ) -> Result<(), String> {
     println!("🔄 Installing update...");
 
-    // Backup current exe
-    if backup_exe.exists() {
-        fs::remove_file(backup_exe).ok();
+    #[cfg(target_os = "linux")]
+    {
+        // The downloaded artifact is a gzip'd tarball. Extract the binary,
+        // then try to replace it in place. If the current location is not
+        // writable (e.g. `/usr/bin` from a `.deb`), fall back to a copy in
+        // the user's `~/.local/bin` and point the launcher there.
+        let extracted = extract_tarball(temp_path)?;
+
+        if let Ok(target) = replace_in_place(&extracted, current_exe, backup_path) {
+            println!("✅ Update installed successfully!");
+            println!("🔄 Restarting...");
+            restart_app(&target)?;
+            return Ok(());
+        }
+
+        let target = install_user_bin(&extracted)?;
+        println!("✅ Update installed successfully!");
+        println!("ℹ️  Installed to {} (current location {} is not writable)", target.display(), current_exe.display());
+        println!("   Old install at {} can be removed with: sudo apt remove rust-teams", current_exe.display());
+        println!("🔄 Restarting...");
+        restart_app(&target)?;
+        return Ok(());
     }
-    fs::rename(current_exe, backup_exe)
-        .map_err(|e| format!("Failed to backup current exe: {}", e))?;
 
-    // Move new exe to current location
-    fs::rename(temp_exe, current_exe).map_err(|e| format!("Failed to replace exe: {}", e))?;
+    #[cfg(target_os = "windows")]
+    {
+        // Backup current exe
+        if backup_path.exists() {
+            fs::remove_file(backup_path).ok();
+        }
+        fs::rename(current_exe, backup_path)
+            .map_err(|e| format!("Failed to backup current exe: {}", e))?;
 
-    println!("✅ Update installed successfully!");
-    println!("🔄 Restarting...");
+        // Move new exe to current location
+        fs::rename(temp_path, current_exe)
+            .map_err(|e| format!("Failed to replace exe: {}", e))?;
 
-    // Restart the app
-    restart_app(current_exe)?;
+        println!("✅ Update installed successfully!");
+        println!("🔄 Restarting...");
 
+        // Restart the app
+        restart_app(current_exe)?;
+        Ok(())
+    }
+
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    {
+        let _ = (temp_path, current_exe, backup_path);
+        Err("Auto-update is not supported on this platform".to_string())
+    }
+}
+
+/// Try to replace the running executable in place with the new binary.
+///
+/// Returns the target path on success; returns `Err` if the current
+/// directory is not writable, in which case the caller falls back to a
+/// user-local install.
+#[cfg(target_os = "linux")]
+fn replace_in_place(
+    new_binary: &PathBuf,
+    current_exe: &PathBuf,
+    backup_path: &PathBuf,
+) -> Result<PathBuf, String> {
+    if backup_path.exists() {
+        fs::remove_file(backup_path).ok();
+    }
+    fs::rename(current_exe, backup_path)
+        .map_err(|e| format!("Cannot update in place ({}), preparing user install", e))?;
+    if fs::rename(new_binary, current_exe).is_err() {
+        fs::copy(new_binary, current_exe)
+            .map_err(|e| format!("Failed to replace binary in place: {}", e))?;
+    }
+    make_executable(current_exe)?;
+    Ok(current_exe.to_path_buf())
+}
+
+/// Install a copy of the new binary into `~/.local/bin/rust-teams` and
+/// point a `~/.local/share/applications` launcher entry at it.
+#[cfg(target_os = "linux")]
+fn install_user_bin(new_binary: &PathBuf) -> Result<PathBuf, String> {
+    let home = std::env::var_os("HOME").ok_or("HOME not set")?;
+    let home = std::path::PathBuf::from(&home);
+    let bin_dir = home.join(".local").join("bin");
+    fs::create_dir_all(&bin_dir)
+        .map_err(|e| format!("Failed to create {}: {}", bin_dir.display(), e))?;
+
+    let target = bin_dir.join("rust-teams");
+    fs::copy(new_binary, &target)
+        .map_err(|e| format!("Failed to copy binary to {}: {}", target.display(), e))?;
+    make_executable(&target)?;
+
+    install_user_desktop_entry(&home)?;
+    Ok(target)
+}
+
+/// Write a `.desktop` launcher entry so the freshly installed binary shows
+/// in the app launcher.
+#[cfg(target_os = "linux")]
+fn install_user_desktop_entry(home: &std::path::Path) -> Result<(), String> {
+    let applications = home.join(".local").join("share").join("applications");
+    fs::create_dir_all(&applications)
+        .map_err(|e| format!("Failed to create {}: {}", applications.display(), e))?;
+
+    let entry = [
+        "[Desktop Entry]",
+        "Type=Application",
+        "Name=R Teams",
+        format!("Exec={}", home.join(".local").join("bin").join("rust-teams").display()).as_str(),
+        "Terminal=false",
+        "Categories=Network;InstantMessaging;",
+        "StartupWMClass=rust-teams",
+    ]
+    .join("\n");
+
+    fs::write(applications.join("rust-teams.desktop"), entry)
+        .map_err(|e| format!("Failed to write desktop entry: {}", e))?;
     Ok(())
 }
 
-/// Restart the application
-fn restart_app(exe_path: &PathBuf) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        use std::process::Command;
-        Command::new(exe_path)
-            .spawn()
-            .map_err(|e| format!("Failed to restart app: {}", e))?;
-        std::process::exit(0);
+/// Extract a gzip'd tarball to a temp dir and return the path to the binary.
+#[cfg(target_os = "linux")]
+fn extract_tarball(tarball: &PathBuf) -> Result<PathBuf, String> {
+    use std::process::Command;
+    let extract_dir = std::env::temp_dir().join(format!(
+        "rust-teams-extract-{}",
+        std::process::id()
+    ));
+    if extract_dir.exists() {
+        fs::remove_dir_all(&extract_dir).ok();
+    }
+    fs::create_dir_all(&extract_dir)
+        .map_err(|e| format!("Failed to create extract dir: {}", e))?;
+
+    let status = Command::new("tar")
+        .arg("-xzf")
+        .arg(tarball)
+        .arg("-C")
+        .arg(&extract_dir)
+        .status()
+        .map_err(|e| format!("Failed to run tar: {}", e))?;
+    if !status.success() {
+        return Err("Failed to extract update archive".to_string());
     }
 
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = exe_path;
-        println!("Please restart the app manually.");
-        std::process::exit(0);
+    // The archive contains a single top-level binary named rust_teams-linux-x64
+    let binary = extract_dir.join("rust_teams-linux-x64");
+    if !binary.is_file() {
+        return Err(format!(
+            "Extracted archive did not contain expected binary at {}",
+            binary.display()
+        ));
     }
+    Ok(binary)
+}
+
+/// Mark a file as executable (POSIX only).
+#[cfg(target_os = "linux")]
+fn make_executable(path: &PathBuf) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = fs::metadata(path)
+        .map_err(|e| format!("Failed to read metadata: {}", e))?
+        .permissions();
+    perms.set_mode(0o755);
+    fs::set_permissions(path, perms).map_err(|e| format!("Failed to chmod: {}", e))
+}
+
+/// Restart the application from the given executable path.
+fn restart_app(exe_path: &PathBuf) -> Result<(), String> {
+    use std::process::Command;
+
+    Command::new(exe_path)
+        .spawn()
+        .map_err(|e| format!("Failed to restart app: {}", e))?;
+    std::process::exit(0);
 }
 
 /// Cached result of an update check — avoids duplicate API calls.
@@ -530,41 +703,47 @@ mod tests {
         let release = serde_json::json!({
             "assets": [
                 {"name": "rust_teams-windows-x64.exe", "browser_download_url": "https://example.com/exe"},
+                {"name": "rust_teams-linux-x64.tar.gz", "browser_download_url": "https://example.com/tar.gz"},
                 {"name": "rust_teams-windows-x64.zip", "browser_download_url": "https://example.com/zip"}
             ]
         });
 
         let url = find_download_url(&release, "0.1.0").unwrap();
+        #[cfg(target_os = "windows")]
         assert_eq!(url, "https://example.com/exe");
+        #[cfg(target_os = "linux")]
+        assert_eq!(url, "https://example.com/tar.gz");
     }
 
     #[test]
     fn test_find_download_url_fallback() {
-        let release = serde_json::json!({
-            "assets": []
-        });
-
+        let release = serde_json::json!({ "assets": [] });
         let url = find_download_url(&release, "0.1.0").unwrap();
-        assert!(url.contains("rust_teams-windows-x64.exe"));
+        assert!(url.contains(platform_asset_name()));
     }
 
     #[test]
     fn test_find_checksum_url_from_assets() {
         let release = serde_json::json!({
             "assets": [
-                {"name": "rust_teams-windows-x64.exe.sha256", "browser_download_url": "https://example.com/exe.sha256"}
+                {"name": "rust_teams-windows-x64.exe.sha256", "browser_download_url": "https://example.com/exe.sha256"},
+                {"name": "rust_teams-linux-x64.tar.gz.sha256", "browser_download_url": "https://example.com/tar.gz.sha256"}
             ]
         });
 
         let url = find_checksum_url(&release, "0.1.0").unwrap();
+        #[cfg(target_os = "windows")]
         assert_eq!(url, "https://example.com/exe.sha256");
+        #[cfg(target_os = "linux")]
+        assert_eq!(url, "https://example.com/tar.gz.sha256");
     }
 
     #[test]
     fn test_find_checksum_url_fallback() {
         let release = serde_json::json!({ "assets": [] });
         let url = find_checksum_url(&release, "0.1.0").unwrap();
-        assert!(url.contains("rust_teams-windows-x64.exe.sha256"));
+        assert!(url.contains(platform_asset_name()));
+        assert!(url.ends_with(".sha256"));
     }
 
     #[test]
@@ -584,15 +763,28 @@ mod tests {
         fs::remove_file(&path).ok();
     }
 
+    /// Build a file whose first two bytes pass the current platform's
+    /// magic-header check and is &gt; 1MB in size.
+    fn platform_valid_download_file(path: &PathBuf) {
+        let mut data = vec![0u8; 1024 * 1024 + 2];
+        #[cfg(target_os = "windows")]
+        {
+            data[0] = b'M';
+            data[1] = b'Z';
+        }
+        #[cfg(target_os = "linux")]
+        {
+            data[0] = 0x1f;
+            data[1] = 0x8b;
+        }
+        fs::write(path, &data).unwrap();
+    }
+
     #[test]
     fn test_validate_download_checksum_mismatch() {
         let dir = std::env::temp_dir();
-        let path = dir.join("rteams_test_validate_mismatch.exe");
-        // 1MB+ of MZ-prefixed data so size/header checks pass
-        let mut data = vec![0u8; 1024 * 1024 + 2];
-        data[0] = b'M';
-        data[1] = b'Z';
-        fs::write(&path, &data).unwrap();
+        let path = dir.join("rteams_test_validate_mismatch");
+        platform_valid_download_file(&path);
 
         let wrong_checksum = "0".repeat(64);
         let result = validate_download(&path, Some(&wrong_checksum));
@@ -604,11 +796,8 @@ mod tests {
     #[test]
     fn test_validate_download_checksum_match() {
         let dir = std::env::temp_dir();
-        let path = dir.join("rteams_test_validate_match.exe");
-        let mut data = vec![0u8; 1024 * 1024 + 2];
-        data[0] = b'M';
-        data[1] = b'Z';
-        fs::write(&path, &data).unwrap();
+        let path = dir.join("rteams_test_validate_match");
+        platform_valid_download_file(&path);
 
         let expected = compute_sha256(&path).unwrap();
         let result = validate_download(&path, Some(&expected));

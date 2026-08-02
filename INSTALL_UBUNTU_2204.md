@@ -8,7 +8,7 @@ Binary targets **x86_64 Linux** with WebKitGTK 4.1. Runs on Ubuntu 22.04+ Deskto
 
 ```bash
 # Download the latest .deb from Releases
-VERSION="v0.9.63"   # or latest from https://github.com/thichcode/rust_teams/releases
+VERSION="v0.9.64"   # or latest from https://github.com/thichcode/rust_teams/releases
 wget "https://github.com/thichcode/rust_teams/releases/download/${VERSION}/rust-teams_${VERSION#v}_amd64.deb"
 
 # Install
@@ -33,7 +33,7 @@ After install, search **"R Teams"** in the app launcher or run `rust_teams`.
 If you prefer not to use .deb:
 
 ```bash
-VERSION="v0.9.63"   # or latest from https://github.com/thichcode/rust_teams/releases
+VERSION="v0.9.64"   # or latest from https://github.com/thichcode/rust_teams/releases
 cd /tmp
 wget "https://github.com/thichcode/rust_teams/releases/download/${VERSION}/rust_teams-linux-x64.tar.gz"
 wget "https://github.com/thichcode/rust_teams/releases/download/${VERSION}/rust_teams-linux-x64.tar.gz.sha256"
