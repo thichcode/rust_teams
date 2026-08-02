@@ -191,6 +191,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         eprintln!("💾 CLI memory profile override: {}", p.as_str());
     }
 
+    // Handle --install-chromium (exit early, do not open the app)
+    if handle_install_chromium(&cli_args) {
+        return Ok(());
+    }
+
     // Check for updates synchronously (once, cached for later use)
     println!("🔄 Checking for updates...");
     let update_check = match updater::check_for_update() {
@@ -758,6 +763,44 @@ fn chromium_user_data_dir() -> std::path::PathBuf {
         .map(|p| p.config_dir().to_path_buf())
         .unwrap_or_else(|| std::path::PathBuf::from(".rust-teams"));
     base.join("chromium-profile")
+}
+
+/// Handle `--install-chromium`: on Windows does nothing (no-op).
+#[cfg(target_os = "windows")]
+fn handle_install_chromium(_args: &[String]) -> bool {
+    false
+}
+
+/// Handle `--install-chromium`: installs the Chromium package via apt (needs sudo).
+///
+/// Returns `true` when the flag was present (caller should exit after this).
+#[cfg(not(target_os = "windows"))]
+fn handle_install_chromium(args: &[String]) -> bool {
+    if !args.iter().any(|a| a == "--install-chromium") {
+        return false;
+    }
+
+    println!("🌐 Installing Chromium via apt (requires sudo)...");
+    match std::process::Command::new("sudo")
+        .args(["apt-get", "install", "-y", "chromium-browser"])
+        .status()
+    {
+        Ok(status) if status.success() => {
+            println!("✅ Chromium installed. Verify: chromium-browser --version");
+        }
+        Ok(status) => {
+            eprintln!(
+                "❌ apt install failed (exit {:?}). Run manually:\n   sudo apt-get install -y chromium-browser",
+                status.code()
+            );
+        }
+        Err(e) => {
+            eprintln!(
+                "❌ Could not run sudo: {e}\n   Run manually: sudo apt-get install -y chromium-browser"
+            );
+        }
+    }
+    true
 }
 
 /// Parse `--render-mode auto|compat` from CLI args.

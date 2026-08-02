@@ -74,6 +74,35 @@ cp target/release/rust_teams ~/.local/bin/rust-teams
 
 ---
 
+## 3.5 Install a Chromium-based browser (optional)
+
+The app **auto-launches Teams in a Chromium app-mode window** for full rendering (WebKitGTK 2.40 is too old for the modern Teams SPA). If no browser is found, the app **auto-downloads a portable Chrome** on first run. Installing one system-wide is preferred (faster startup, no download).
+
+**Google Chrome (recommended — best Teams support):**
+```bash
+wget -q -O /tmp/google-chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+sudo apt install -y /tmp/google-chrome.deb
+google-chrome --version
+```
+
+**Microsoft Edge:**
+```bash
+wget -qO- https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | sudo tee /usr/share/keyrings/microsoft.gpg >/dev/null
+echo "deb [signed-by=/usr/share/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/edge stable main" | sudo tee /etc/apt/sources.list.d/microsoft-edge.list
+sudo apt update && sudo apt install -y microsoft-edge-stable
+```
+
+**Chromium (snap):**
+```bash
+sudo snap install chromium
+```
+
+**Quickest (from the app):** `rust_teams --install-chromium` installs `chromium-browser` via `sudo apt-get`.
+
+> Note: after installing any of these, the app automatically detects and uses it. No config needed.
+
+---
+
 ## 4. Auto-update (in-app)
 
 App checks GitHub Releases on startup. If new version found → downloads `rust_teams-linux-x64.tar.gz`, verifies SHA256, replaces binary, restarts.
@@ -96,7 +125,8 @@ App checks GitHub Releases on startup. If new version found → downloads `rust_
 | Login page renders all-white or hard to see | `export WEBKIT_DISABLE_COMPOSITING_MODE=1` before launch |
 | Teams shows blank white page (WebKitGTK 2.40 too old) | Install Google Chrome/Chromium/Edge — the app auto-launches Teams in a Chromium app-mode window |
 | Force Chromium backend | `rust_teams --backend chromium` |
-| Force embedded webview | `rust_teams --backend webkit` |
+| Force WebView embed | `rust_teams --backend webkit` |
+| Install a system browser | On a machine with no browser, run `rust_teams --install-chromium` (installs `chromium-browser` via `sudo apt-get`). |
 
 ---
 
