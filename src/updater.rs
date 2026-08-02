@@ -471,8 +471,15 @@ fn install_update(
 
         let target = install_user_bin(&extracted)?;
         println!("✅ Update installed successfully!");
-        println!("ℹ️  Installed to {} (current location {} is not writable)", target.display(), current_exe.display());
-        println!("   Old install at {} can be removed with: sudo apt remove rust-teams", current_exe.display());
+        println!(
+            "ℹ️  Installed to {} (current location {} is not writable)",
+            target.display(),
+            current_exe.display()
+        );
+        println!(
+            "   Old install at {} can be removed with: sudo apt remove rust-teams",
+            current_exe.display()
+        );
         println!("🔄 Restarting...");
         restart_app(&target)?;
         return Ok(());
@@ -488,8 +495,7 @@ fn install_update(
             .map_err(|e| format!("Failed to backup current exe: {}", e))?;
 
         // Move new exe to current location
-        fs::rename(temp_path, current_exe)
-            .map_err(|e| format!("Failed to replace exe: {}", e))?;
+        fs::rename(temp_path, current_exe).map_err(|e| format!("Failed to replace exe: {}", e))?;
 
         println!("✅ Update installed successfully!");
         println!("🔄 Restarting...");
@@ -561,7 +567,11 @@ fn install_user_desktop_entry(home: &std::path::Path) -> Result<(), String> {
         "[Desktop Entry]",
         "Type=Application",
         "Name=R Teams",
-        format!("Exec={}", home.join(".local").join("bin").join("rust-teams").display()).as_str(),
+        format!(
+            "Exec={}",
+            home.join(".local").join("bin").join("rust-teams").display()
+        )
+        .as_str(),
         "Terminal=false",
         "Categories=Network;InstantMessaging;",
         "StartupWMClass=rust-teams",
@@ -577,15 +587,12 @@ fn install_user_desktop_entry(home: &std::path::Path) -> Result<(), String> {
 #[cfg(target_os = "linux")]
 fn extract_tarball(tarball: &PathBuf) -> Result<PathBuf, String> {
     use std::process::Command;
-    let extract_dir = std::env::temp_dir().join(format!(
-        "rust-teams-extract-{}",
-        std::process::id()
-    ));
+    let extract_dir =
+        std::env::temp_dir().join(format!("rust-teams-extract-{}", std::process::id()));
     if extract_dir.exists() {
         fs::remove_dir_all(&extract_dir).ok();
     }
-    fs::create_dir_all(&extract_dir)
-        .map_err(|e| format!("Failed to create extract dir: {}", e))?;
+    fs::create_dir_all(&extract_dir).map_err(|e| format!("Failed to create extract dir: {}", e))?;
 
     let status = Command::new("tar")
         .arg("-xzf")

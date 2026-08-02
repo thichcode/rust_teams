@@ -3,7 +3,9 @@ use directories::ProjectDirs;
 use std::fs;
 use std::path::PathBuf;
 
-use crate::app::{AppConfig, LinuxBackend, MemoryOptimization, Profile, WebkitRenderMode, WindowSettings};
+use crate::app::{
+    AppConfig, LinuxBackend, MemoryOptimization, Profile, WebkitRenderMode, WindowSettings,
+};
 
 #[derive(Debug)]
 pub struct ConfigManager {

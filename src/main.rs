@@ -20,10 +20,10 @@ use tao::event_loop::{ControlFlow, EventLoop, EventLoopBuilder, EventLoopProxy};
 use tao::platform::windows::WindowExtWindows;
 use tao::window::{Icon, WindowBuilder};
 #[cfg(target_os = "windows")]
+use wry::WebViewBuilderExtWindows;
+#[cfg(target_os = "windows")]
 use wry::WebViewExtWindows;
 use wry::{NewWindowFeatures, NewWindowResponse, WebViewBuilder};
-#[cfg(target_os = "windows")]
-use wry::WebViewBuilderExtWindows;
 
 use app::{AppConfig, LinuxBackend, WebkitRenderMode};
 use config::ConfigManager;
@@ -396,11 +396,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     if config.memory_optimization.enabled {
         #[cfg(target_os = "windows")]
         {
-            webview_builder = webview_builder
-                .with_default_context_menus(false);
+            webview_builder = webview_builder.with_default_context_menus(false);
         }
-        webview_builder = webview_builder
-            .with_devtools(true);
+        webview_builder = webview_builder.with_devtools(true);
     }
 
     let webview = webview_builder
@@ -715,7 +713,9 @@ fn try_launch_chromium_backend(config: &AppConfig, url: &str) -> Result<bool, Bo
         Ok(b) => b,
         Err(e) => {
             eprintln!("⚠️  No usable Chromium browser ({e}). Falling back to WebKitGTK.");
-            eprintln!("   Tip: install google-chrome, chromium, or microsoft-edge (or use --backend webkit to silence).");
+            eprintln!(
+                "   Tip: install google-chrome, chromium, or microsoft-edge (or use --backend webkit to silence)."
+            );
             log::warn!("ensure_chromium failed, using WebKitGTK: {e}");
             return Ok(false);
         }
@@ -732,16 +732,8 @@ fn try_launch_chromium_backend(config: &AppConfig, url: &str) -> Result<bool, Bo
         browser,
         user_data_dir.display()
     );
-    log::info!(
-        "Launching Chromium backend: {} --app={}",
-        browser,
-        url
-    );
-    log::info!(
-        "Launching Chromium backend: {} --app={}",
-        browser,
-        url
-    );
+    log::info!("Launching Chromium backend: {} --app={}", browser, url);
+    log::info!("Launching Chromium backend: {} --app={}", browser, url);
 
     match linux_launcher::launch_app_mode(&browser, url, &flags, &user_data_dir) {
         Ok(()) => {
@@ -833,7 +825,9 @@ mod popup_routing_tests {
 
     #[test]
     fn allows_login_microsoftonline_com_navigation() {
-        assert!(handle_navigation("https://login.microsoftonline.com/".into()));
+        assert!(handle_navigation(
+            "https://login.microsoftonline.com/".into()
+        ));
     }
 
     #[test]

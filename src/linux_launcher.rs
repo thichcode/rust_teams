@@ -18,8 +18,7 @@ pub fn chromium_home() -> Result<PathBuf, String> {
 }
 
 /// Chrome-for-Testing manifest (latest stable) with direct linux64 download URL.
-const CHROMIUM_MANIFEST_URL: &str =
-    "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json";
+const CHROMIUM_MANIFEST_URL: &str = "https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json";
 
 /// Known Chromium-based browser executable names (checked on PATH).
 const BROWSER_CANDIDATES: &[&str] = &[
@@ -119,7 +118,8 @@ fn download_chromium() -> Result<(), String> {
     if !resp.status().is_success() {
         return Err(format!("Download failed with HTTP {}", resp.status()));
     }
-    let mut out = fs::File::create(&zip_path).map_err(|e| format!("Cannot write {}: {e}", zip_path.display()))?;
+    let mut out = fs::File::create(&zip_path)
+        .map_err(|e| format!("Cannot write {}: {e}", zip_path.display()))?;
     std::io::copy(&mut resp, &mut out).map_err(|e| format!("Download interrupted: {e}"))?;
 
     // 3. Extract.
@@ -146,12 +146,15 @@ fn extract_zip(zip_path: &Path, dest: &Path) -> Result<(), String> {
         let name = entry.name().to_string();
         let out_path = dest.join(&name);
         if entry.is_dir() {
-            fs::create_dir_all(&out_path).map_err(|e| format!("Cannot create {}: {e}", out_path.display()))?;
+            fs::create_dir_all(&out_path)
+                .map_err(|e| format!("Cannot create {}: {e}", out_path.display()))?;
         } else {
             if let Some(parent) = out_path.parent() {
-                fs::create_dir_all(parent).map_err(|e| format!("Cannot create {}: {e}", parent.display()))?;
+                fs::create_dir_all(parent)
+                    .map_err(|e| format!("Cannot create {}: {e}", parent.display()))?;
             }
-            let mut f = fs::File::create(&out_path).map_err(|e| format!("Cannot write {}: {e}", out_path.display()))?;
+            let mut f = fs::File::create(&out_path)
+                .map_err(|e| format!("Cannot write {}: {e}", out_path.display()))?;
             std::io::copy(&mut entry, &mut f).map_err(|e| e.to_string())?;
         }
     }

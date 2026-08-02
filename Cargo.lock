@@ -4575,7 +4575,7 @@ dependencies = [
 
 [[package]]
 name = "rust_teams"
-version = "0.9.66"
+version = "0.9.68"
 dependencies = [
  "anyhow",
  "chrono",
