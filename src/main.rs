@@ -23,7 +23,7 @@ use tao::window::{Icon, WindowBuilder};
 use wry::WebViewBuilderExtWindows;
 #[cfg(target_os = "windows")]
 use wry::WebViewExtWindows;
-use wry::{NewWindowFeatures, NewWindowResponse, WebViewBuilder};
+use wry::{NewWindowFeatures, NewWindowResponse, WebContext, WebViewBuilder};
 
 use app::{AppConfig, LinuxBackend, WebkitRenderMode};
 use config::ConfigManager;
@@ -42,6 +42,34 @@ use ui::performance::{get_all_optimization_scripts, get_visibility_script};
 
 /// Cached update check result — avoids calling GitHub API twice.
 static UPDATE_RESULT: OnceLock<updater::UpdateCheck> = OnceLock::new();
+
+/// Check if `--clear-cache` is in CLI args.
+fn has_clear_cache_flag(args: &[String]) -> bool {
+    args.iter().any(|a| a == "--clear-cache")
+}
+
+/// Compute the WebView2 / Chromium data directory for this app.
+#[cfg(target_os = "windows")]
+fn app_data_dir() -> std::path::PathBuf {
+    let base = directories::ProjectDirs::from("", "", "rust-teams")
+        .map(|d| d.data_dir().to_path_buf())
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    base.join("webview-data")
+}
+
+/// Delete the data directory so WebView2/Chromium starts fresh.
+#[cfg(target_os = "windows")]
+fn clear_app_cache() {
+    let dir = app_data_dir();
+    if dir.exists() {
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) => println!("🗑️  Cache cleared: {}", dir.display()),
+            Err(e) => eprintln!("⚠️  Could not clear cache ({}): {}", dir.display(), e),
+        }
+    } else {
+        println!("ℹ️  No cache to clear ({} does not exist)", dir.display());
+    }
+}
 
 fn parse_webview_event(body: &str) -> Option<AppEvent> {
     let message = serde_json::from_str::<serde_json::Value>(body).ok()?;
@@ -189,6 +217,13 @@ fn main() -> Result<(), Box<dyn Error>> {
     let cli_profile = memory::parse_cli_profile(&cli_args);
     if let Some(p) = cli_profile {
         eprintln!("💾 CLI memory profile override: {}", p.as_str());
+    }
+
+    // Handle --clear-cache (Windows only, exits early)
+    #[cfg(target_os = "windows")]
+    if has_clear_cache_flag(&cli_args) {
+        clear_app_cache();
+        return Ok(());
     }
 
     // Handle --install-chromium (exit early, do not open the app)
@@ -354,6 +389,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let proxy_for_popouts = proxy.clone();
     let proxy_for_ipc = proxy.clone();
+
+    // On Windows, use a custom data directory so cache lives in a known location.
+    #[cfg(target_os = "windows")]
+    let mut web_context = WebContext::new(Some(app_data_dir()));
+    #[cfg(target_os = "windows")]
+    let mut webview_builder = WebViewBuilder::new_with_web_context(&mut web_context)
+        .with_url(&teams_url)
+        .with_user_agent(CHROME_UA);
+    #[cfg(not(target_os = "windows"))]
     let mut webview_builder = WebViewBuilder::new()
         .with_url(&teams_url)
         .with_user_agent(CHROME_UA);
