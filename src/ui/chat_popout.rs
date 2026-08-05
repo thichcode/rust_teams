@@ -16,6 +16,8 @@ fn trusted_teams_url(raw_url: &str) -> Option<Url> {
         && host != "teams.office.com"
         && !host.ends_with(".teams.office.com")
         && host != "teams.live.com"
+        && host != "teams.cloud.microsoft"
+        && !host.ends_with(".teams.cloud.microsoft")
     {
         return None;
     }
@@ -214,7 +216,9 @@ pub fn get_chat_popout_script() -> String {
         const host = url.hostname.toLowerCase();
         if (host !== 'teams.microsoft.com' &&
             !host.endsWith('.teams.microsoft.com') &&
-            host !== 'teams.live.com') {
+            host !== 'teams.live.com' &&
+            host !== 'teams.cloud.microsoft' &&
+            !host.endsWith('.teams.cloud.microsoft')) {
             return false;
         }
 
@@ -250,7 +254,9 @@ pub fn get_chat_popout_script() -> String {
         const host = url.hostname.toLowerCase();
         return host === 'teams.microsoft.com' ||
             host.endsWith('.teams.microsoft.com') ||
-            host === 'teams.live.com';
+            host === 'teams.live.com' ||
+            host === 'teams.cloud.microsoft' ||
+            host.endsWith('.teams.cloud.microsoft');
     }
 
     function postToHost(type, url) {

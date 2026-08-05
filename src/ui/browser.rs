@@ -128,6 +128,8 @@ fn is_teams_web_url(raw_url: &str) -> bool {
         || host == "teams.office.com"
         || host.ends_with(".teams.office.com")
         || host == "teams.live.com"
+        || host == "teams.cloud.microsoft"
+        || host.ends_with(".teams.cloud.microsoft")
 }
 
 /// Open URL in a new Edge window (non-blocking).
