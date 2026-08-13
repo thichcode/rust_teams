@@ -2,6 +2,17 @@
 
 use reqwest::Url;
 
+/// Whether a bare host belongs to the Teams domains trusted for in-app windows.
+pub fn is_trusted_teams_host(host: &str) -> bool {
+    host == "teams.microsoft.com"
+        || host.ends_with(".teams.microsoft.com")
+        || host == "teams.office.com"
+        || host.ends_with(".teams.office.com")
+        || host == "teams.live.com"
+        || host == "teams.cloud.microsoft"
+        || host.ends_with(".teams.cloud.microsoft")
+}
+
 fn trusted_teams_url(raw_url: &str) -> Option<Url> {
     let Ok(url) = Url::parse(raw_url) else {
         return None;
@@ -11,14 +22,7 @@ fn trusted_teams_url(raw_url: &str) -> Option<Url> {
     }
 
     let host = url.host_str()?;
-    if host != "teams.microsoft.com"
-        && !host.ends_with(".teams.microsoft.com")
-        && host != "teams.office.com"
-        && !host.ends_with(".teams.office.com")
-        && host != "teams.live.com"
-        && host != "teams.cloud.microsoft"
-        && !host.ends_with(".teams.cloud.microsoft")
-    {
+    if !is_trusted_teams_host(host) {
         return None;
     }
 

@@ -91,7 +91,7 @@ impl MemoryProfile {
                 cfg.disable_domain_reliability = true;
                 cfg.disable_back_forward_cache = true;
                 cfg.disable_site_isolation = true;
-                cfg.renderer_process_limit = 2;
+                cfg.renderer_process_limit = 4;
                 cfg.js_max_old_space_mb = 512;
             }
         }
@@ -328,7 +328,7 @@ mod tests {
         assert!(!cfg.disable_site_isolation);
 
         MemoryProfile::Aggressive.apply_to(&mut cfg);
-        assert_eq!(cfg.renderer_process_limit, 2);
+        assert_eq!(cfg.renderer_process_limit, 4);
         assert_eq!(cfg.js_max_old_space_mb, 512);
     }
 }

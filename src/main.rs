@@ -34,7 +34,8 @@ use ui::auto_read::get_auto_read_script;
 use ui::badge::{parse_unread_count, play_notification_sound, update_taskbar_badge};
 use ui::browser::{BROWSER_PATH, open_in_new_window, open_url_smart};
 use ui::chat_popout::{
-    get_chat_popout_script, is_teams_chat_url, is_teams_meeting_url, is_trusted_teams_url,
+    get_chat_popout_script, is_teams_chat_url, is_teams_meeting_url, is_trusted_teams_host,
+    is_trusted_teams_url,
 };
 use ui::chat_window::ChatWindow;
 use ui::console::auto_hide_console;
@@ -49,7 +50,6 @@ fn has_clear_cache_flag(args: &[String]) -> bool {
 }
 
 /// Compute the WebView2 / Chromium data directory for this app.
-#[cfg(target_os = "windows")]
 fn app_data_dir() -> std::path::PathBuf {
     let base = directories::ProjectDirs::from("", "", "rust-teams")
         .map(|d| d.data_dir().to_path_buf())
@@ -58,7 +58,6 @@ fn app_data_dir() -> std::path::PathBuf {
 }
 
 /// Delete the data directory so WebView2/Chromium starts fresh.
-#[cfg(target_os = "windows")]
 fn clear_app_cache() {
     let dir = app_data_dir();
     if dir.exists() {
@@ -115,8 +114,6 @@ fn handle_navigation(url: String) -> bool {
             || host.ends_with(".login.live.com")
             || host == "account.live.com"
             || host.ends_with(".account.live.com")
-            || host == "www.microsoft.com"
-            || host == "support.microsoft.com"
         {
             return true;
         }
@@ -142,6 +139,13 @@ fn looks_like_chat_request(raw_url: &str) -> bool {
     let Ok(url) = Url::parse(raw_url) else {
         return false;
     };
+
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    if !is_trusted_teams_host(host) {
+        return false;
+    }
 
     let path = url.path().to_ascii_lowercase();
     path.starts_with("/l/chat/")
@@ -219,8 +223,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         eprintln!("💾 CLI memory profile override: {}", p.as_str());
     }
 
-    // Handle --clear-cache (Windows only, exits early)
-    #[cfg(target_os = "windows")]
+    // Handle --clear-cache (exits early)
     if has_clear_cache_flag(&cli_args) {
         clear_app_cache();
         return Ok(());
@@ -397,8 +400,19 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut webview_builder = WebViewBuilder::new_with_web_context(&mut web_context)
         .with_url(&teams_url)
         .with_user_agent(CHROME_UA);
+    // On non-Windows, share a single WebContext between the main window and any
+    // secondary chat/meeting windows so they keep the same Teams session.
+    // Rc<RefCell<>> is safe here: all WebView access happens on the event-loop thread.
+    // The RefMut `ctx` must stay in this scope until the main builder is consumed
+    // by `build()` below (WebViewBuilder holds &'a mut WebContext).
     #[cfg(not(target_os = "windows"))]
-    let mut webview_builder = WebViewBuilder::new()
+    let shared_context = std::rc::Rc::new(std::cell::RefCell::new(WebContext::new(Some(
+        app_data_dir(),
+    ))));
+    #[cfg(not(target_os = "windows"))]
+    let mut ctx = shared_context.borrow_mut();
+    #[cfg(not(target_os = "windows"))]
+    let mut webview_builder = WebViewBuilder::new_with_web_context(&mut ctx)
         .with_url(&teams_url)
         .with_user_agent(CHROME_UA);
 
@@ -448,6 +462,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let webview = webview_builder
         .build(&window)
         .map_err(|e| -> Box<dyn Error> { format!("Failed to create WebView: {}", e).into() })?;
+
+    // The main builder consumed the WebContext borrow; release it before the
+    // event loop re-borrows the shared context for secondary windows.
+    #[cfg(not(target_os = "windows"))]
+    drop(ctx);
 
     #[cfg(target_os = "windows")]
     let webview_environment = webview.environment();
@@ -509,7 +528,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                     chat_windows.remove(&url);
                     let proxy_for_secondary = proxy.clone();
                     let proxy_for_secondary_ipc = proxy.clone();
-                    let builder = WebViewBuilder::new()
+                    #[cfg(target_os = "windows")]
+                    let builder = WebViewBuilder::new();
+                    #[cfg(not(target_os = "windows"))]
+                    let mut ctx = shared_context.borrow_mut();
+                    #[cfg(not(target_os = "windows"))]
+                    let builder = WebViewBuilder::new_with_web_context(&mut ctx);
+                    let builder = builder
                         .with_user_agent(CHROME_UA)
                         .with_initialization_script(chat_popout_js.clone())
                         .with_navigation_handler(handle_navigation)
@@ -556,7 +581,13 @@ fn main() -> Result<(), Box<dyn Error>> {
                     meeting_windows.remove(&url);
                     let proxy_for_secondary = proxy.clone();
                     let proxy_for_secondary_ipc = proxy.clone();
-                    let builder = WebViewBuilder::new()
+                    #[cfg(target_os = "windows")]
+                    let builder = WebViewBuilder::new();
+                    #[cfg(not(target_os = "windows"))]
+                    let mut ctx = shared_context.borrow_mut();
+                    #[cfg(not(target_os = "windows"))]
+                    let builder = WebViewBuilder::new_with_web_context(&mut ctx);
+                    let builder = builder
                         .with_user_agent(CHROME_UA)
                         .with_initialization_script(chat_popout_js.clone())
                         .with_navigation_handler(handle_navigation)
@@ -912,6 +943,11 @@ mod popup_routing_tests {
     }
 
     #[test]
+    fn rejects_untrusted_chat_shaped_path() {
+        assert!(!looks_like_chat_request("https://evil.example/l/chat/0/0"));
+    }
+
+    #[test]
     fn recognizes_http_teams_v2_query_hint_without_trusting_it() {
         assert!(looks_like_chat_request(
             "http://teams.microsoft.com/v2?users=alice"
@@ -919,8 +955,10 @@ mod popup_routing_tests {
     }
 
     #[test]
-    fn recognizes_direct_untrusted_chat_path() {
-        assert!(looks_like_chat_request("https://evil.example/l/chat/0/0"));
+    fn recognizes_trusted_chat_path() {
+        assert!(looks_like_chat_request(
+            "https://teams.microsoft.com/l/chat/0/0"
+        ));
     }
 
     #[test]

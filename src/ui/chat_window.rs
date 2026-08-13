@@ -15,9 +15,9 @@ pub struct ChatWindow {
 
 impl ChatWindow {
     /// Build a secondary window with an already configured WebView builder.
-    pub fn create(
+    pub fn create<'a>(
         event_loop: &EventLoopWindowTarget<super::AppEvent>,
-        builder: WebViewBuilder<'static>,
+        builder: WebViewBuilder<'a>,
     ) -> Result<Self, Box<dyn Error>> {
         let window = WindowBuilder::new()
             .with_title("R Teams Chat")
