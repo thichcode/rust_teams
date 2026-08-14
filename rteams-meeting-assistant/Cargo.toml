@@ -4,7 +4,7 @@ version = "0.4.6"
 edition = "2024"
 
 [dependencies]
-eframe = "0.31"
+eframe = "0.35"
 egui = "0.31"
 reqwest = { version = "0.12", features = ["json", "blocking"] }
 serde = { version = "1", features = ["derive"] }
