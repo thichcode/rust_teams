@@ -482,7 +482,7 @@ fn install_update(
         );
         println!("🔄 Restarting...");
         restart_app(&target)?;
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(target_os = "windows")]
