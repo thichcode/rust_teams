@@ -725,7 +725,7 @@ fn get_teams_url(config: &AppConfig) -> String {
         return profile.teams_url.clone();
     }
 
-    "https://teams.microsoft.com".to_string()
+    "https://teams.cloud.microsoft".to_string()
 }
 
 /// Parse `--url <url>` from CLI args (diagnostic override).

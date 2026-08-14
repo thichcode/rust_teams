@@ -32,7 +32,7 @@ impl ConfigManager {
             profiles: vec![Profile {
                 id: "default".to_string(),
                 name: "Microsoft Teams".to_string(),
-                teams_url: "https://teams.office.com".to_string(),
+                teams_url: "https://teams.cloud.microsoft".to_string(),
                 is_default: true,
             }],
             current_profile_id: Some("default".to_string()),

@@ -3,7 +3,7 @@
     {
       "id": "default",
       "name": "Microsoft Teams",
-      "teams_url": "https://teams.office.com",
+      "teams_url": "https://teams.cloud.microsoft",
       "is_default": true
     }
   ],
