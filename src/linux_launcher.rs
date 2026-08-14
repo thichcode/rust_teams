@@ -76,10 +76,10 @@ pub fn ensure_chromium() -> Result<String, String> {
         {
             let _ = make_tree_executable(&chromium_home()?.join("chrome-linux64"));
         }
-        if let Ok(meta) = std::fs::metadata(&exe) {
-            if meta.len() > 10_000_000 {
-                return Ok(exe.display().to_string());
-            }
+        if let Ok(meta) = std::fs::metadata(&exe)
+            && meta.len() > 10_000_000
+        {
+            return Ok(exe.display().to_string());
         }
     }
     download_chromium()?;
@@ -243,7 +243,7 @@ pub fn launch_app_mode(
     browser: &str,
     url: &str,
     extra_args: &[String],
-    user_data_dir: &PathBuf,
+    user_data_dir: &Path,
 ) -> Result<(), String> {
     let mut cmd = Command::new(browser);
     cmd.arg(format!("--app={url}"))
