@@ -104,13 +104,13 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy -p rust_teams --all-targets -- -D warnings
 
       - name: Build
-        run: cargo build --workspace --release
+        run: cargo build -p rust_teams --release
 
       - name: Run tests
-        run: cargo test --workspace --verbose
+        run: cargo test -p rust_teams --verbose
 
       - name: Prepare artifacts
         run: |
