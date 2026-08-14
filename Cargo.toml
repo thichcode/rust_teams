@@ -30,7 +30,7 @@ env_logger = "0.11"
 log = "0.4"
 
 # Utilities
-directories = "4.0"
+directories = "5.0"
 
 # Auto-update (Schannel on Windows, OpenSSL on Linux — no rustls to ensure system proxy/TLS compatibility)
 reqwest = { version = "0.12", features = ["json", "blocking", "multipart"] }
