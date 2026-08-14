@@ -14,7 +14,7 @@ This implementation addresses the need for a lighter alternative to the official
 struct Profile {
     id: String,
     name: String, // "Work", "Admin", "Personal"
-    teams_url: String, // Default: "https://teams.microsoft.com"
+    teams_url: String, // Default: "https://teams.microsoft.com/v2/"
     cookies: HashMap<String, String>,
     session_data: Option<SessionData>,
     auto_login: bool,

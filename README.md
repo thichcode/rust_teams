@@ -173,7 +173,7 @@ The configuration system supports multiple profiles, memory optimization, and wi
     {
       "id": "default",
       "name": "Microsoft Teams",
-      "teams_url": "https://teams.microsoft.com",
+      "teams_url": "https://teams.microsoft.com/v2/",
       "is_default": true
     }
   ],
@@ -203,13 +203,13 @@ The configuration system supports multiple profiles, memory optimization, and wi
     {
       "id": "work",
       "name": "Work Teams",
-      "teams_url": "https://teams.microsoft.com",
+      "teams_url": "https://teams.microsoft.com/v2/",
       "is_default": true
     },
     {
       "id": "personal",
       "name": "Personal Teams",
-      "teams_url": "https://teams.microsoft.com",
+      "teams_url": "https://teams.microsoft.com/v2/",
       "is_default": false
     }
   ],
