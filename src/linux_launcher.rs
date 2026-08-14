@@ -245,15 +245,61 @@ pub fn launch_app_mode(
     extra_args: &[String],
     user_data_dir: &PathBuf,
 ) -> Result<(), String> {
+    log::info!("=== Chromium Launch Debug ===");
+    log::info!("Browser: {}", browser);
+    log::info!("URL: {}", url);
+    log::info!("User data dir: {}", user_data_dir.display());
+    log::info!("Extra args: {:?}", extra_args);
+
+    // Check if browser exists
+    if !std::path::Path::new(browser).exists() {
+        log::error!("Browser executable not found: {}", browser);
+        // Try to find it in PATH
+        if let Ok(path) = std::process::Command::new("which")
+            .arg(browser)
+            .output()
+        {
+            if path.status.success() {
+                let found = String::from_utf8_lossy(&path.stdout).trim();
+                log::info!("Found in PATH: {}", found);
+            }
+        }
+    }
+
+    // Check user data dir
+    if user_data_dir.exists() {
+        log::info!("User data dir exists: {}", user_data_dir.display());
+    } else {
+        log::info!("User data dir does not exist, will be created: {}", user_data_dir.display());
+    }
+
     let mut cmd = Command::new(browser);
     cmd.arg(format!("--app={url}"))
         .arg(format!("--user-data-dir={}", user_data_dir.display()))
         .arg("--no-first-run")
         .arg("--no-default-browser-check");
     for flag in extra_args {
+        log::info!("Adding flag: {}", flag);
         cmd.arg(flag);
     }
-    cmd.spawn()
-        .map(|_| ())
-        .map_err(|e| format!("Failed to launch {}: {e}", browser))
+
+    // Log full command
+    log::info!("Full command: {} {}", browser, {
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        args.join(" ")
+    });
+
+    match cmd.spawn() {
+        Ok(child) => {
+            log::info!("Chromium spawned successfully, PID: {}", child.id());
+            Ok(())
+        }
+        Err(e) => {
+            log::error!("Failed to spawn Chromium: {}", e);
+            Err(format!("Failed to launch {}: {e}", browser))
+        }
+    }
 }
