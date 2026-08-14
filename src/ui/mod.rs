@@ -7,6 +7,7 @@ pub mod chat_popout;
 pub mod chat_window;
 pub mod console;
 pub mod performance;
+pub mod webview_debug;
 
 use serde::{Deserialize, Serialize};
 

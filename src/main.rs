@@ -35,6 +35,7 @@ use ui::chat_popout::{
 use ui::chat_window::ChatWindow;
 use ui::console::auto_hide_console;
 use ui::performance::get_all_optimization_scripts;
+use ui::webview_debug::{init_debug_logging, log_webview2_info};
 
 /// Cached update check result — avoids calling GitHub API twice.
 static UPDATE_RESULT: OnceLock<updater::UpdateCheck> = OnceLock::new();
@@ -172,6 +173,10 @@ fn handle_new_window_request(url: String, proxy: &EventLoopProxy<AppEvent>) -> N
 
 fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
+
+    // Initialize WebView2 debug logging (before any WebView creation)
+    init_debug_logging();
+    log_webview2_info();
 
     // Print version
     println!("🦀 R Teams v{}", updater::current_version());
